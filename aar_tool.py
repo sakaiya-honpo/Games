@@ -421,4 +421,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        log_path = os.path.join(_BASE_DIR, "error.log")
+        with open(log_path, "a", encoding="utf-8") as _f:
+            import traceback as _tb
+            _f.write(f"\n[{datetime.datetime.now()}]\n{_tb.format_exc()}\n")

@@ -69,11 +69,15 @@ jobs:
           Copy-Item aar_tool.py $dist\
 
           # ---------------------------------------------------------------
-          # 6. ランチャー作成（コンソールなし）
+          # 6. ランチャー作成（コンソールなし・エラーログ付き）
           # ---------------------------------------------------------------
+          # TCL_LIBRARY / TK_LIBRARY を明示指定しないと embeddable Python では
+          # tkinter が tcl/tk ライブラリを見つけられず無音クラッシュする
           $bat = '@echo off' + "`r`n" +
+                 'set TCL_LIBRARY=%~dp0tcl\tcl8.6' + "`r`n" +
+                 'set TK_LIBRARY=%~dp0tcl\tk8.6' + "`r`n" +
                  'cd /d "%~dp0"' + "`r`n" +
-                 'start "" "%~dp0pythonw.exe" "%~dp0aar_tool.py"'
+                 'start "" "%~dp0pythonw.exe" "%~dp0aar_tool.py" 2>>"%~dp0error.log"'
           Set-Content "$dist\AARTool.bat" $bat -Encoding ASCII
 
       - name: Upload artifact
