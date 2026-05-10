@@ -105,6 +105,8 @@ WINDOW_ALL = "（全画面）"
 # ---------------------------------------------------------------------------
 _PROMPT_HEADER = """\
 以下はゲームプレイ中に画面テキストを定期的にOCRで読み取り、差分のみを時系列順に記録したプレイログです。
+OCRは機械読み取りのため文字誤認識・行欠落が含まれることがあります。
+ログで明確に確認できる事実のみ記載し、不明・矛盾する点は推測で補完せず「ログ不明」「〇〇と矛盾」と明記してください。
 
 --- プレイログ開始 ---
 {log}
@@ -460,12 +462,22 @@ def ocr_image(pil_image) -> str:
         )
         if r.returncode != 0:
             _write_error_log(f"OCR error: {r.stderr}")
-        return r.stdout.strip()
+        return _clean_ocr(r.stdout.strip())
     finally:
         try:
             os.unlink(tmp_path)
         except Exception:
             pass
+
+
+def _clean_ocr(text: str) -> str:
+    # Windows OCRは日本語を1文字ずつスペース区切りで出力するため除去
+    text = re.sub(
+        r'(?<=[぀-鿿＀-￯])\s+(?=[぀-鿿＀-￯])',
+        '', text
+    )
+    text = re.sub(r' {3,}', ' ', text)
+    return text.strip()
 
 
 def check_ocr_available() -> None:
@@ -674,9 +686,18 @@ class CaptureWorker:
 # ---------------------------------------------------------------------------
 def generate_aar(log_text: str, model: str = DEFAULT_MODEL,
                  template: str | None = None,
+                 voice_memos: list[str] | None = None,
                  stream_callback=None) -> str:
     tmpl = template or AAR_PROMPT_TEMPLATE
     prompt = tmpl.format(log=log_text)
+    if voice_memos:
+        voice_block = (
+            "\n--- ボイスメモ（プレイヤーの肉声記録・信頼度高） ---\n"
+            + "\n\n".join(voice_memos)
+            + "\n--- ボイスメモ終了 ---\n"
+            "矛盾がある場合はボイスメモの内容をOCRログより優先してください。\n"
+        )
+        prompt = prompt.replace("--- プレイログ終了 ---\n", "--- プレイログ終了 ---\n" + voice_block)
     if stream_callback:
         full = ""
         for chunk in ollama.chat(
@@ -715,6 +736,7 @@ class AARToolApp:
         self.worker: CaptureWorker | None = None
         self.voice_recorder: VoiceRecorder | None = None
         self.voice_on = False
+        self._voice_memo_paths: list[str] = []
         self._custom_prompt_path: str | None = None
         self._hotkey_listener = VoiceHotkeyListener()
         cfg = _load_config()
@@ -938,6 +960,7 @@ class AARToolApp:
     # 記録開始 / 停止
     # ------------------------------------------------------------------
     def start_recording(self) -> None:
+        self._voice_memo_paths = []
         self.is_running = True
         self.start_btn.config(state="disabled")
         self.stop_btn.config(state="normal")
@@ -1061,6 +1084,7 @@ class AARToolApp:
             def _save():
                 path = self.voice_recorder.stop()
                 if path:
+                    self._voice_memo_paths.append(path)
                     self.root.after(0, lambda: self._append_log(
                         f"[システム] ボイスメモ保存: {os.path.basename(path)}"))
             threading.Thread(target=_save, daemon=True).start()
@@ -1090,12 +1114,21 @@ class AARToolApp:
         self.status.set("AAR生成中（LLM処理）...")
         self.progress.start()
 
+        voice_contents: list[str] = []
+        for vp in list(self._voice_memo_paths):
+            try:
+                with open(vp, encoding="utf-8") as f:
+                    voice_contents.append(f.read().strip())
+            except Exception:
+                pass
+
         def _gen():
             try:
                 aar_text = generate_aar(
                     log_text,
                     model=self.model_name.get(),
                     template=template,
+                    voice_memos=voice_contents or None,
                     stream_callback=self._append_aar_preview,
                 )
                 filepath = save_aar(aar_text, save_dir=self.save_dir.get() or _SAVE_DIR)
