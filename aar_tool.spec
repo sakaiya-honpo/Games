@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 #
-# PyInstaller spec for aar_tool
+# PyInstaller spec for aar_tool (Windows OCR 版)
 #
 # Build:
 #   pip install pyinstaller
@@ -8,61 +8,31 @@
 #
 # 出力先: dist/AARTool/AARTool.exe  (onedir モード)
 #
-# 注意: 初回起動時に PaddleOCR が日本語モデルをダウンロードします（約400MB）。
-#       モデルは %USERPROFILE%\.paddleocr\ にキャッシュされます。
+# 注意: Windows の日本語言語パックが必要です（通常インストール済み）。
+#       Ollama を別途起動しておく必要があります。
 
-from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_data_files
 
-# --------------------------------------------------------------------------
-# paddlepaddle / paddleocr は内部モジュールが多いため collect_all で一括収集
-# --------------------------------------------------------------------------
-paddle_datas,     paddle_binaries,     paddle_hiddenimports     = collect_all('paddle')
-paddleocr_datas,  paddleocr_binaries,  paddleocr_hiddenimports  = collect_all('paddleocr')
-pyclipper_datas,  pyclipper_binaries,  pyclipper_hiddenimports  = collect_all('pyclipper')
-pygetwindow_datas, pygetwindow_binaries, pygetwindow_hiddenimports = collect_all('pygetwindow')
+# winocr / winrt: Windows Runtime OCR バインディング
+winocr_datas,      winocr_binaries,      winocr_hidden      = collect_all('winocr')
+pygetwindow_datas, pygetwindow_binaries, pygetwindow_hidden = collect_all('pygetwindow')
 
-# Cython: paddle 依存で Compiler モジュールが実行時にロードされるためデータファイルが必要
-cython_datas = collect_data_files('Cython')
+# winrt-* パッケージを収集（winocr の依存）
+try:
+    winrt_datas, winrt_binaries, winrt_hidden = collect_all('winrt')
+except Exception:
+    winrt_datas, winrt_binaries, winrt_hidden = [], [], []
 
-# OpenCV: cascade ファイル等のデータファイル
-cv2_datas = collect_data_files('cv2')
-
-all_datas = (
-    paddle_datas
-    + paddleocr_datas
-    + pyclipper_datas
-    + pygetwindow_datas
-    + cython_datas
-    + cv2_datas
-)
-all_binaries = (
-    paddle_binaries
-    + paddleocr_binaries
-    + pyclipper_binaries
-    + pygetwindow_binaries
-)
-all_hidden = (
-    paddle_hiddenimports
-    + paddleocr_hiddenimports
-    + pyclipper_hiddenimports
-    + pygetwindow_hiddenimports
-    + collect_submodules('skimage')
-    + collect_submodules('cv2')
+all_datas    = winocr_datas    + pygetwindow_datas    + winrt_datas
+all_binaries = winocr_binaries + pygetwindow_binaries + winrt_binaries
+all_hidden   = (
+    winocr_hidden
+    + pygetwindow_hidden
+    + winrt_hidden
     + [
         'PIL._tkinter_finder',
-        'lmdb',
-        'rapidfuzz',
-        'shapely',
-        'shapely.geometry',
-        'imghdr',
         'requests',
         'tqdm',
-        'yaml',
-        'six',
-        'cachetools',
-        'scipy.special._ufuncs',
-        'scipy.linalg.blas',
-        'Cython',
     ]
 )
 
@@ -77,7 +47,6 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # UPX 圧縮が原因のエラーを避けるため excludes は最小限に
     excludes=['matplotlib', 'jupyter', 'IPython'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -96,7 +65,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,              # UPX 無効: DLL 破損・誤検知・起動失敗を防ぐ
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     target_arch=None,
@@ -105,14 +74,13 @@ exe = EXE(
     icon=None,
 )
 
-# onedir モード: paddle の大量 DLL を扱いやすくするため
 coll = COLLECT(
     exe,
     a.binaries,
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=False,              # UPX 無効
+    upx=False,
     upx_exclude=[],
     name='AARTool',
 )
