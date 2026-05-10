@@ -1,0 +1,6 @@
+pyautogui>=0.9.54
+paddleocr>=2.8.0
+paddlepaddle>=2.6.0
+ollama>=0.2.0
+numpy>=1.24.0
+Pillow>=10.0.0
