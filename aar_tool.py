@@ -20,6 +20,10 @@ import ollama
 # PyInstaller の onedir ビルドでは実行ファイルのディレクトリを基準にする
 _BASE_DIR = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
 
+# AAR・ログの保存先: デスクトップ上の専用フォルダ
+_SAVE_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "ゲームAAR")
+os.makedirs(_SAVE_DIR, exist_ok=True)
+
 # ---------------------------------------------------------------------------
 # 設定
 # ---------------------------------------------------------------------------
@@ -28,7 +32,7 @@ SIMILARITY_THRESHOLD = 0.95    # これ以上類似していれば破棄
 OCR_LANG = "japan"             # PaddleOCR言語設定
 DEFAULT_MODEL = "qwen2.5:7b"   # Ollamaモデル名
 SAVE_OCR_LOG = False           # 中間OCRログを保存するか（デバッグ用）
-OCR_LOG_PATH = os.path.join(_BASE_DIR, "ocr_log.txt")
+OCR_LOG_PATH = os.path.join(_SAVE_DIR, "ocr_log.txt")
 
 AAR_PROMPT_TEMPLATE = """\
 以下はゲームプレイ中に画面テキストを定期的にOCRで読み取り、差分のみを時系列順に記録したプレイログです。
@@ -163,7 +167,8 @@ def generate_aar(log_text: str, model: str = DEFAULT_MODEL) -> str:
 
 def save_aar(aar_text: str, save_dir: str | None = None) -> str:
     if save_dir is None:
-        save_dir = _BASE_DIR
+        save_dir = _SAVE_DIR
+    os.makedirs(save_dir, exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"AAR_{timestamp}.md"
     filepath = os.path.join(save_dir, filename)
@@ -182,7 +187,7 @@ class AARToolApp:
         self.root.resizable(True, True)
 
         self.worker: CaptureWorker | None = None
-        self.save_dir = tk.StringVar(value=_BASE_DIR)
+        self.save_dir = tk.StringVar(value=_SAVE_DIR)
         self.model_name = tk.StringVar(value=DEFAULT_MODEL)
         self.status = tk.StringVar(value="OCRエンジン初期化中...")
         self.is_running = False
@@ -304,7 +309,7 @@ class AARToolApp:
 
             try:
                 aar_text = generate_aar(log_text, model=self.model_name.get())
-                filepath = save_aar(aar_text, save_dir=self.save_dir.get() or _BASE_DIR)
+                filepath = save_aar(aar_text, save_dir=self.save_dir.get() or _SAVE_DIR)
                 self.root.after(0, lambda: messagebox.showinfo(
                     "完了", f"AARを保存しました:\n{filepath}"))
             except Exception as e:
