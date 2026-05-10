@@ -23,7 +23,10 @@ paddleocr_datas, paddleocr_binaries, paddleocr_hiddenimports = collect_all('padd
 pyclipper_datas, pyclipper_binaries, pyclipper_hiddenimports = collect_all('pyclipper')
 pygetwindow_datas, pygetwindow_binaries, pygetwindow_hiddenimports = collect_all('pygetwindow')
 
-all_datas    = paddle_datas    + paddleocr_datas    + pyclipper_datas    + pygetwindow_datas
+# Cython は paddle の依存として引き込まれるが .cpp 等のデータファイルが必要
+cython_datas = collect_data_files('Cython')
+
+all_datas    = paddle_datas + paddleocr_datas + pyclipper_datas + pygetwindow_datas + cython_datas
 all_binaries = paddle_binaries + paddleocr_binaries + pyclipper_binaries + pygetwindow_binaries
 all_hidden   = (
     paddle_hiddenimports
