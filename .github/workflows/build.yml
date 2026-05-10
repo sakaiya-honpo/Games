@@ -71,7 +71,16 @@ jobs:
           }
 
           # ---------------------------------------------------------------
-          # 5. アプリ本体をコピー
+          # 5. OCR ヘルパー（.NET Framework 4.8 exe）をビルドして同梱
+          # ---------------------------------------------------------------
+          # PowerShell から WinRT async を呼ぶのは困難なため C# exe を使う。
+          # .NET Framework 4.8 は Windows 10/11 に標準搭載なので追加インストール不要。
+          dotnet publish ocr_helper\ocr_helper.csproj -c Release -o "$dist\_ocr_tmp"
+          Copy-Item "$dist\_ocr_tmp\ocr_helper.exe" "$dist\"
+          Remove-Item "$dist\_ocr_tmp" -Recurse -Force
+
+          # ---------------------------------------------------------------
+          # 6. アプリ本体をコピー
           # ---------------------------------------------------------------
           Copy-Item aar_tool.py $dist\
 
