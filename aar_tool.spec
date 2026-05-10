@@ -17,6 +17,7 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files
 winocr_datas,      winocr_binaries,      winocr_hidden      = collect_all('winocr')
 pygetwindow_datas, pygetwindow_binaries, pygetwindow_hidden = collect_all('pygetwindow')
 pyautogui_datas,   pyautogui_binaries,   pyautogui_hidden   = collect_all('pyautogui')
+ollama_datas,      ollama_binaries,      ollama_hidden      = collect_all('ollama')
 
 # winrt-* パッケージを収集（winocr の依存）
 try:
@@ -24,12 +25,13 @@ try:
 except Exception:
     winrt_datas, winrt_binaries, winrt_hidden = [], [], []
 
-all_datas    = winocr_datas    + pygetwindow_datas    + pyautogui_datas    + winrt_datas
-all_binaries = winocr_binaries + pygetwindow_binaries + pyautogui_binaries + winrt_binaries
+all_datas    = winocr_datas    + pygetwindow_datas    + pyautogui_datas    + ollama_datas    + winrt_datas
+all_binaries = winocr_binaries + pygetwindow_binaries + pyautogui_binaries + ollama_binaries + winrt_binaries
 all_hidden   = (
     winocr_hidden
     + pygetwindow_hidden
     + pyautogui_hidden
+    + ollama_hidden
     + winrt_hidden
     + [
         'PIL._tkinter_finder',
