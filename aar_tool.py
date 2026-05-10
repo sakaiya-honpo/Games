@@ -105,30 +105,10 @@ def capture_screen(region=None) -> Image.Image:
 
 
 # ---------------------------------------------------------------------------
-# Windows OCR（PowerShell subprocess 経由）
+# Windows OCR（ocr_helper.exe 経由 / .NET Framework 4.8）
 # ---------------------------------------------------------------------------
-_PS_OCR_SCRIPT = """\
-Add-Type -AssemblyName System.Runtime.WindowsRuntime
-function Await($t) {
-    $a = [System.WindowsRuntimeSystemExtensions]::AsTask($t)
-    $a.Wait() | Out-Null; $a.Result
-}
-[void][Windows.Media.Ocr.OcrEngine,Windows.Foundation,ContentType=WindowsRuntime]
-[void][Windows.Graphics.Imaging.BitmapDecoder,Windows.Foundation,ContentType=WindowsRuntime]
-[void][Windows.Globalization.Language,Windows.Foundation,ContentType=WindowsRuntime]
-[void][Windows.Storage.StorageFile,Windows.Foundation,ContentType=WindowsRuntime]
-[void][Windows.Storage.FileAccessMode,Windows.Foundation,ContentType=WindowsRuntime]
-$engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage(
-    [Windows.Globalization.Language]::new($env:OCR_LANG))
-if (-not $engine) { Write-Error 'OCR engine unavailable'; exit 1 }
-$file   = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($env:IMG_PATH))
-$stream = Await ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read))
-try {
-    $dec = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream))
-    $bmp = Await ($dec.GetSoftwareBitmapAsync())
-    (Await ($engine.RecognizeAsync($bmp))).Text
-} finally { $stream.Dispose() }
-"""
+def _ocr_exe() -> str:
+    return os.path.join(_BASE_DIR, "ocr_helper.exe")
 
 
 def ocr_image(pil_image) -> str:
@@ -136,16 +116,13 @@ def ocr_image(pil_image) -> str:
         tmp_path = f.name
     try:
         pil_image.save(tmp_path, "PNG")
-        env = os.environ.copy()
-        env["IMG_PATH"] = tmp_path
-        env["OCR_LANG"] = OCR_LANG
         r = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", _PS_OCR_SCRIPT],
-            capture_output=True, text=True, timeout=30, env=env,
-            creationflags=0x08000000,  # CREATE_NO_WINDOW: コンソールウィンドウを非表示
+            [_ocr_exe(), tmp_path, OCR_LANG],
+            capture_output=True, text=True, encoding="utf-8", timeout=30,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW
         )
         if r.returncode != 0:
-            _write_error_log(f"OCR stderr: {r.stderr}")
+            _write_error_log(f"OCR error: {r.stderr}")
         return r.stdout.strip()
     finally:
         try:
@@ -155,7 +132,10 @@ def ocr_image(pil_image) -> str:
 
 
 def check_ocr_available() -> None:
-    """起動時チェック: 日本語 OCR が使用可能か確認。失敗時は例外を送出。"""
+    """起動時チェック: ocr_helper.exe の存在と日本語 OCR の動作を確認。"""
+    exe = _ocr_exe()
+    if not os.path.exists(exe):
+        raise RuntimeError(f"ocr_helper.exe が見つかりません:\n{exe}")
     test_img = Image.new("RGB", (10, 10), color=(255, 255, 255))
     result = ocr_image(test_img)
     if result is None:
