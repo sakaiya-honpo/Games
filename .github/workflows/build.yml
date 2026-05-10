@@ -31,7 +31,7 @@ jobs:
           # ---------------------------------------------------------------
           $pkgs = "$dist\Lib\site-packages"
           New-Item -ItemType Directory -Path $pkgs -Force | Out-Null
-          pip install mss pygetwindow ollama Pillow pyaudio `
+          pip install mss pygetwindow ollama Pillow pyaudio SpeechRecognition `
             --target $pkgs --no-warn-script-location
 
           # ---------------------------------------------------------------

@@ -24,6 +24,7 @@ def _write_error_log(msg: str) -> None:
 
 
 try:
+    import re
     import subprocess
     import tempfile
     import threading
@@ -166,6 +167,23 @@ AAR_FORMATS: dict[str, str | None] = {
 
 
 # ---------------------------------------------------------------------------
+# ユーティリティ
+# ---------------------------------------------------------------------------
+def _format_elapsed(delta) -> str:
+    total = int(delta.total_seconds())
+    h, rem = divmod(total, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m:02d}:{s:02d}"
+
+
+def _safe_filename(title: str, max_len: int = 20) -> str:
+    safe = re.sub(r'[\\/:*?"<>|\s]+', '_', title).strip('_')
+    return safe[:max_len] if safe else "unknown"
+
+
+# ---------------------------------------------------------------------------
 # スクリーンキャプチャ（mss: フリッカーなし）
 # ---------------------------------------------------------------------------
 def capture_screen(region=None) -> Image.Image:
@@ -252,23 +270,24 @@ def get_window_region(title: str) -> tuple[int, int, int, int] | None:
 class VoiceRecorder:
     CHUNK = 1024
     CHANNELS = 1
-    RATE = 44100
+    RATE = 16000  # 16kHz: STT向け最適
 
-    def __init__(self, save_dir: str):
+    def __init__(self, save_dir: str, game_title: str = ""):
         self._save_dir = save_dir
+        self._game_title = game_title
         self._frames: list[bytes] = []
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._pa = None
         self._stream = None
-        self._sample_size = 2
+        self._start_time: datetime.datetime | None = None
 
     def start(self) -> None:
         import pyaudio as _pa
         self._frames = []
         self._stop_event.clear()
+        self._start_time = datetime.datetime.now()
         self._pa = _pa.PyAudio()
-        self._sample_size = self._pa.get_sample_size(_pa.paInt16)
         self._stream = self._pa.open(
             format=_pa.paInt16,
             channels=self.CHANNELS,
@@ -295,7 +314,7 @@ class VoiceRecorder:
             except Exception:
                 pass
         if self._frames:
-            return self._save()
+            return self._transcribe_and_save()
         return None
 
     def _record(self) -> None:
@@ -306,15 +325,32 @@ class VoiceRecorder:
             except Exception:
                 break
 
-    def _save(self) -> str:
+    def _transcribe_and_save(self) -> str:
+        import speech_recognition as sr
+        end_time = datetime.datetime.now()
+        start_time = self._start_time or end_time
+        elapsed = _format_elapsed(end_time - start_time)
+
+        audio_bytes = b"".join(self._frames)
+        recognizer = sr.Recognizer()
+        audio_data = sr.AudioData(audio_bytes, self.RATE, 2)
+        try:
+            text = recognizer.recognize_google(audio_data, language="ja-JP")
+        except sr.UnknownValueError:
+            text = "（音声を認識できませんでした）"
+        except Exception as e:
+            text = f"（認識エラー: {e}）"
+
         os.makedirs(self._save_dir, exist_ok=True)
-        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = os.path.join(self._save_dir, f"VoiceMemo_{ts}.wav")
-        with wave.open(path, "wb") as wf:
-            wf.setnchannels(self.CHANNELS)
-            wf.setsampwidth(self._sample_size)
-            wf.setframerate(self.RATE)
-            wf.writeframes(b"".join(self._frames))
+        ts = start_time.strftime("%Y%m%d_%H%M%S")
+        game = _safe_filename(self._game_title) if self._game_title else "unknown"
+        path = os.path.join(self._save_dir, f"VoiceMemo_{game}_{ts}.txt")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(f"# ボイスメモ\n")
+            f.write(f"ゲーム : {self._game_title or '全画面'}\n")
+            f.write(f"開始   : {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"終了   : {end_time.strftime('%Y-%m-%d %H:%M:%S')} (+{elapsed})\n\n")
+            f.write(text + "\n")
         return path
 
 
@@ -333,12 +369,18 @@ class CaptureWorker:
         self._window_title = window_title
         self._save_dir = save_dir or _SAVE_DIR
         self._memo_path: str | None = None
+        self._start_time: datetime.datetime | None = None
 
     def start(self) -> None:
         self._stop_event.clear()
+        self._start_time = datetime.datetime.now()
         os.makedirs(self._save_dir, exist_ok=True)
-        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self._memo_path = os.path.join(self._save_dir, f"PlayMemo_{ts}.txt")
+        ts = self._start_time.strftime("%Y%m%d_%H%M%S")
+        game = (
+            "全画面" if self._window_title == WINDOW_ALL
+            else _safe_filename(self._window_title)
+        )
+        self._memo_path = os.path.join(self._save_dir, f"PlayMemo_{game}_{ts}.txt")
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -361,8 +403,10 @@ class CaptureWorker:
                 screenshot = capture_screen(region)
                 current_text = ocr_image(screenshot)
                 if self._is_new_content(current_text):
-                    timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-                    entry = f"[{timestamp}]\n{current_text}"
+                    now = datetime.datetime.now()
+                    elapsed = _format_elapsed(now - self._start_time) if self._start_time else "00:00"
+                    timestamp = now.strftime("%H:%M:%S")
+                    entry = f"[{timestamp} +{elapsed}]\n{current_text}"
                     with self._lock:
                         self.log_lines.append(entry)
                         self._append_to_file(entry)
@@ -713,7 +757,10 @@ class AARToolApp:
     def _start_voice_memo(self) -> None:
         try:
             save_dir = self.save_dir.get() or _SAVE_DIR
-            self.voice_recorder = VoiceRecorder(save_dir)
+            game_title = self.window_title.get()
+            if game_title == WINDOW_ALL:
+                game_title = "全画面"
+            self.voice_recorder = VoiceRecorder(save_dir, game_title=game_title)
             self.voice_recorder.start()
             self.voice_on = True
             self.voice_btn.config(text="🎙 ボイスメモ: ON", style="Accent.TButton"
