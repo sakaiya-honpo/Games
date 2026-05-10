@@ -23,7 +23,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $dist = "dist\AARTool"
+          $dist = "dist\PlayMemoMaker"
           New-Item -ItemType Directory -Path $dist -Force | Out-Null
 
           # ---------------------------------------------------------------
@@ -31,7 +31,7 @@ jobs:
           # ---------------------------------------------------------------
           $pkgs = "$dist\Lib\site-packages"
           New-Item -ItemType Directory -Path $pkgs -Force | Out-Null
-          pip install mss pygetwindow ollama Pillow sounddevice SpeechRecognition pynput `
+          pip install mss pygetwindow ollama Pillow sounddevice SpeechRecognition pynput numpy notion-client `
             --target $pkgs --no-warn-script-location
 
           # ---------------------------------------------------------------
@@ -54,18 +54,14 @@ jobs:
           # ---------------------------------------------------------------
           # 4. tkinter サポートファイルを Python インストール先からコピー
           # ---------------------------------------------------------------
-          # embeddable Python には tkinter が含まれないため全ファイルを手動コピー
           $pyDir  = Split-Path (Get-Command python).Path
           $dlls   = "$pyDir\DLLs"
-          # C拡張 と TCL/TK DLL
           foreach ($f in @("_tkinter.pyd","tcl86t.dll","tk86t.dll","zlib1.dll")) {
             if (Test-Path "$dlls\$f") { Copy-Item "$dlls\$f" $dist }
           }
-          # TCL/TK ランタイムデータ
           if (Test-Path "$pyDir\tcl") {
             Copy-Item "$pyDir\tcl" "$dist\tcl" -Recurse -Force
           }
-          # tkinter Python パッケージ本体（embeddable には含まれないため必須）
           if (Test-Path "$pyDir\Lib\tkinter") {
             Copy-Item "$pyDir\Lib\tkinter" "$pkgs\tkinter" -Recurse -Force
           }
@@ -73,8 +69,6 @@ jobs:
           # ---------------------------------------------------------------
           # 5. OCR ヘルパー（.NET Framework 4.8 exe）をビルドして同梱
           # ---------------------------------------------------------------
-          # PowerShell から WinRT async を呼ぶのは困難なため C# exe を使う。
-          # .NET Framework 4.8 は Windows 10/11 に標準搭載なので追加インストール不要。
           dotnet publish ocr_helper\ocr_helper.csproj -c Release -o "$dist\_ocr_tmp"
           Copy-Item "$dist\_ocr_tmp\ocr_helper.exe" "$dist\"
           Remove-Item "$dist\_ocr_tmp" -Recurse -Force
@@ -85,19 +79,15 @@ jobs:
           Copy-Item aar_tool.py $dist\
 
           # ---------------------------------------------------------------
-          # 6. ランチャー作成
+          # 7. 起動用 bat を生成
           # ---------------------------------------------------------------
-          # TCL_LIBRARY / TK_LIBRARY を明示指定しないと embeddable Python では
-          # tkinter が tcl/tk ライブラリを見つけられず無音クラッシュする。
-          # pythonw.exe はコンソールなし起動。start /B で即座にバッチを終了。
-          $bat = '@echo off' + "`r`n" +
-                 'set TCL_LIBRARY=%~dp0tcl\tcl8.6' + "`r`n" +
-                 'set TK_LIBRARY=%~dp0tcl\tk8.6' + "`r`n" +
-                 'cd /d "%~dp0"' + "`r`n" +
-                 'start /B "" "%~dp0pythonw.exe" "%~dp0aar_tool.py"'
-          Set-Content "$dist\AARTool.bat" $bat -Encoding ASCII
+          $launcher = '@echo off' + "`r`n" +
+                      'set TCL_LIBRARY=%~dp0tcl\tcl8.6' + "`r`n" +
+                      'set TK_LIBRARY=%~dp0tcl\tk8.6' + "`r`n" +
+                      'cd /d "%~dp0"' + "`r`n" +
+                      'start /B "" "%~dp0pythonw.exe" "%~dp0aar_tool.py"'
+          Set-Content "$dist\PlayMemoMaker.bat" $launcher -Encoding ASCII
 
-          # debug.bat: コンソール付き python.exe で起動しエラーを画面に表示
           $dbg = '@echo off' + "`r`n" +
                  'set TCL_LIBRARY=%~dp0tcl\tcl8.6' + "`r`n" +
                  'set TK_LIBRARY=%~dp0tcl\tk8.6' + "`r`n" +
@@ -109,6 +99,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AARTool-Windows
-          path: dist\AARTool\
+          name: PlayMemoMaker-Windows
+          path: dist\PlayMemoMaker\
           retention-days: 30

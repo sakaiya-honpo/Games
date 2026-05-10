@@ -91,20 +91,38 @@ try:
 except Exception:
     _HOTKEY_AVAILABLE = False
 
+# オプション: notion-client（Notion連携）
+try:
+    from notion_client import Client as _NotionClient
+    _NOTION_AVAILABLE = True
+except Exception:
+    _NOTION_AVAILABLE = False
+
 # ---------------------------------------------------------------------------
 # 設定
 # ---------------------------------------------------------------------------
 CAPTURE_INTERVAL = 10
 SIMILARITY_THRESHOLD = 0.95
+VISION_INTERVAL = 45
 OCR_LANG = "ja"
 DEFAULT_MODEL = "qwen2.5:7b"
+DEFAULT_VISION_MODEL = "moondream"
 WINDOW_ALL = "（全画面）"
+CAPTURE_MODE_SIMULATION = "simulation"
+CAPTURE_MODE_ACTION = "action"
+VISION_PROMPT = (
+    "このゲーム画面で今何が起きているか、"
+    "プレイヤーの状況・場所・重要なイベントを中心に日本語で1〜3文で説明してください。"
+    "UIラベルや数値の羅列は無視し、ゲームの状況だけを説明してください。"
+)
 
 # ---------------------------------------------------------------------------
 # AAR プロンプトテンプレート（3形式）
 # ---------------------------------------------------------------------------
 _PROMPT_HEADER = """\
 以下はゲームプレイ中に画面テキストを定期的にOCRで読み取り、差分のみを時系列順に記録したプレイログです。
+OCRは機械読み取りのため文字誤認識・行欠落が含まれることがあります。
+ログで明確に確認できる事実のみ記載し、不明・矛盾する点は推測で補完せず「ログ不明」「〇〇と矛盾」と明記してください。
 
 --- プレイログ開始 ---
 {log}
@@ -460,12 +478,35 @@ def ocr_image(pil_image) -> str:
         )
         if r.returncode != 0:
             _write_error_log(f"OCR error: {r.stderr}")
-        return r.stdout.strip()
+        return _clean_ocr(r.stdout.strip())
     finally:
         try:
             os.unlink(tmp_path)
         except Exception:
             pass
+
+
+def _clean_ocr(text: str) -> str:
+    # Windows OCRは日本語を1文字ずつスペース区切りで出力するため除去
+    text = re.sub(
+        r'(?<=[぀-鿿＀-￯])\s+(?=[぀-鿿＀-￯])',
+        '', text
+    )
+    text = re.sub(r' {3,}', ' ', text)
+    return text.strip()
+
+
+def describe_image(pil_image: Image.Image, model: str) -> str:
+    import base64
+    from io import BytesIO
+    buf = BytesIO()
+    pil_image.save(buf, format="PNG")
+    img_b64 = base64.b64encode(buf.getvalue()).decode()
+    resp = ollama.chat(
+        model=model,
+        messages=[{"role": "user", "content": VISION_PROMPT, "images": [img_b64]}],
+    )
+    return resp["message"]["content"].strip()
 
 
 def check_ocr_available() -> None:
@@ -590,7 +631,9 @@ class VoiceRecorder:
 # ---------------------------------------------------------------------------
 class CaptureWorker:
     def __init__(self, log_callback=None, window_title: str = WINDOW_ALL,
-                 save_dir: str | None = None):
+                 save_dir: str | None = None,
+                 mode: str = CAPTURE_MODE_SIMULATION,
+                 vision_model: str = DEFAULT_VISION_MODEL):
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._last_text = ""
@@ -601,6 +644,8 @@ class CaptureWorker:
         self._save_dir = save_dir or _SAVE_DIR
         self._memo_path: str | None = None
         self._start_time: datetime.datetime | None = None
+        self._mode = mode
+        self._vision_model = vision_model
 
     def start(self) -> None:
         self._stop_event.clear()
@@ -631,8 +676,13 @@ class CaptureWorker:
         while not self._stop_event.is_set():
             try:
                 screenshot = _capture_game(self._window_title)
-                current_text = ocr_image(screenshot)
-                if self._is_new_content(current_text):
+                if self._mode == CAPTURE_MODE_ACTION:
+                    current_text = describe_image(screenshot, self._vision_model)
+                    save = bool(current_text.strip())
+                else:
+                    current_text = ocr_image(screenshot)
+                    save = self._is_new_content(current_text)
+                if save:
                     now = datetime.datetime.now()
                     elapsed = _format_elapsed(now - self._start_time) if self._start_time else "00:00"
                     timestamp = now.strftime("%H:%M:%S")
@@ -645,7 +695,8 @@ class CaptureWorker:
             except Exception as e:
                 if self._log_callback:
                     self._log_callback(f"[ERROR] キャプチャ中にエラー: {e}")
-            self._stop_event.wait(timeout=CAPTURE_INTERVAL)
+            interval = VISION_INTERVAL if self._mode == CAPTURE_MODE_ACTION else CAPTURE_INTERVAL
+            self._stop_event.wait(timeout=interval)
 
     def _is_new_content(self, text: str) -> bool:
         if not text.strip():
@@ -674,9 +725,18 @@ class CaptureWorker:
 # ---------------------------------------------------------------------------
 def generate_aar(log_text: str, model: str = DEFAULT_MODEL,
                  template: str | None = None,
+                 voice_memos: list[str] | None = None,
                  stream_callback=None) -> str:
     tmpl = template or AAR_PROMPT_TEMPLATE
     prompt = tmpl.format(log=log_text)
+    if voice_memos:
+        voice_block = (
+            "\n--- ボイスメモ（プレイヤーの肉声記録・信頼度高） ---\n"
+            + "\n\n".join(voice_memos)
+            + "\n--- ボイスメモ終了 ---\n"
+            "矛盾がある場合はボイスメモの内容をOCRログより優先してください。\n"
+        )
+        prompt = prompt.replace("--- プレイログ終了 ---\n", "--- プレイログ終了 ---\n" + voice_block)
     if stream_callback:
         full = ""
         for chunk in ollama.chat(
@@ -704,6 +764,101 @@ def save_aar(aar_text: str, save_dir: str | None = None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Notion連携
+# ---------------------------------------------------------------------------
+class NotionExporter:
+    """セッションログとAARをNotionデータベースページに保存する。"""
+    _MAX_TEXT = 1900   # Notionテキストブロック1個の文字上限
+    _MAX_BLOCKS = 95   # append_blocks 1回あたりの上限
+
+    def __init__(self, token: str, database_id: str):
+        self._client = _NotionClient(auth=token)
+        self._db_id = database_id.strip()
+
+    def test_connection(self) -> str:
+        """接続テスト。データベース名を返す。"""
+        db = self._client.databases.retrieve(self._db_id)
+        name = "".join(t.get("plain_text", "") for t in db.get("title", []))
+        return name or "(名前なし)"
+
+    def push_session(self, game_title: str, start_time: datetime.datetime,
+                     end_time: datetime.datetime, log_text: str, mode: str) -> str:
+        """新しいNotionページを作成してセッションログを書き込む。ページIDを返す。"""
+        elapsed = _format_elapsed(end_time - start_time)
+        mode_label = "アクション（ビジョンAI）" if mode == CAPTURE_MODE_ACTION else "シミュレーション（OCR）"
+        page_title = f"{game_title}  {start_time.strftime('%Y-%m-%d %H:%M')}"
+
+        page = self._client.pages.create(
+            parent={"database_id": self._db_id},
+            properties={
+                "Name": {"title": [{"text": {"content": page_title}}]},
+            },
+        )
+        page_id = page["id"]
+
+        header_blocks = [
+            {
+                "object": "block", "type": "callout",
+                "callout": {
+                    "rich_text": [{"type": "text", "text": {"content":
+                        f"ゲーム: {game_title}\n"
+                        f"開始: {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                        f"終了: {end_time.strftime('%Y-%m-%d %H:%M:%S')} (+{elapsed})\n"
+                        f"モード: {mode_label}"
+                    }}],
+                    "icon": {"emoji": "🎮"},
+                },
+            },
+            {
+                "object": "block", "type": "heading_2",
+                "heading_2": {"rich_text": [{"type": "text", "text": {"content": "プレイログ"}}]},
+            },
+        ]
+        self._append_blocks(page_id, header_blocks)
+        self._append_blocks(page_id, self._log_blocks(log_text))
+        return page_id
+
+    def append_aar(self, page_id: str, aar_text: str) -> None:
+        """既存ページにAAR見出しとテキストを追加する。"""
+        blocks = [
+            {
+                "object": "block", "type": "heading_2",
+                "heading_2": {"rich_text": [{"type": "text", "text": {
+                    "content": "AAR（After Action Review）"}}]},
+            },
+        ] + self._log_blocks(aar_text)
+        self._append_blocks(page_id, blocks)
+
+    def _para(self, content: str) -> dict:
+        return {
+            "object": "block", "type": "paragraph",
+            "paragraph": {"rich_text": [{"type": "text", "text": {"content": content}}]},
+        }
+
+    def _log_blocks(self, text: str) -> list[dict]:
+        """テキストを _MAX_TEXT 文字ごとに段落ブロックへ変換する。"""
+        blocks = []
+        chunk = ""
+        for line in text.splitlines(keepends=True):
+            if len(chunk) + len(line) > self._MAX_TEXT:
+                if chunk:
+                    blocks.append(self._para(chunk.rstrip()))
+                chunk = line
+            else:
+                chunk += line
+        if chunk.strip():
+            blocks.append(self._para(chunk.rstrip()))
+        return blocks or [self._para("（ログなし）")]
+
+    def _append_blocks(self, page_id: str, blocks: list[dict]) -> None:
+        for i in range(0, len(blocks), self._MAX_BLOCKS):
+            self._client.blocks.children.append(
+                block_id=page_id,
+                children=blocks[i:i + self._MAX_BLOCKS],
+            )
+
+
+# ---------------------------------------------------------------------------
 # GUI
 # ---------------------------------------------------------------------------
 class AARToolApp:
@@ -715,17 +870,28 @@ class AARToolApp:
         self.worker: CaptureWorker | None = None
         self.voice_recorder: VoiceRecorder | None = None
         self.voice_on = False
+        self._voice_memo_paths: list[str] = []
         self._custom_prompt_path: str | None = None
         self._hotkey_listener = VoiceHotkeyListener()
+        self._ss_hotkey_listener = VoiceHotkeyListener()
         cfg = _load_config()
         self._hotkey_config: dict = cfg.get("voice_hotkey", dict(_DEFAULT_HOTKEY))
+        self._ss_hotkey_config: dict = cfg.get("ss_hotkey", dict(_DEFAULT_HOTKEY))
 
         self.save_dir = tk.StringVar(value=_SAVE_DIR)
         self.model_name = tk.StringVar(value=DEFAULT_MODEL)
         self.window_title = tk.StringVar(value=WINDOW_ALL)
         self.aar_format = tk.StringVar(value=list(AAR_FORMATS.keys())[0])
+        self.capture_mode = tk.StringVar(value=CAPTURE_MODE_SIMULATION)
+        self.vision_model_name = tk.StringVar(value=DEFAULT_VISION_MODEL)
         self.hotkey_display = tk.StringVar(
             value=self._hotkey_config.get("display") or "未設定")
+        self.ss_hotkey_display = tk.StringVar(
+            value=self._ss_hotkey_config.get("display") or "未設定")
+        self.notion_token = tk.StringVar(value=cfg.get("notion_token", ""))
+        self.notion_db_id = tk.StringVar(value=cfg.get("notion_db_id", ""))
+        self.notion_auto_push = tk.BooleanVar(value=cfg.get("notion_auto_push", False))
+        self._notion_page_id: str | None = None
         self.status = tk.StringVar(value="OCR確認中...")
         self.is_running = False
 
@@ -775,16 +941,74 @@ class AARToolApp:
             row=3, column=1, sticky="ew", **pad)
         ttk.Button(cfg, text="参照...", command=self._browse_dir).grid(row=3, column=2, **pad)
 
+        ttk.Label(cfg, text="キャプチャモード:").grid(row=4, column=0, sticky="w", **pad)
+        mode_frame = ttk.Frame(cfg)
+        mode_frame.grid(row=4, column=1, columnspan=2, sticky="w", **pad)
+        ttk.Radiobutton(mode_frame, text="シミュレーション（OCR）",
+                        variable=self.capture_mode, value=CAPTURE_MODE_SIMULATION,
+                        command=self._on_mode_change).pack(side="left")
+        ttk.Radiobutton(mode_frame, text="アクション（ビジョンAI）",
+                        variable=self.capture_mode, value=CAPTURE_MODE_ACTION,
+                        command=self._on_mode_change).pack(side="left", padx=(12, 0))
+
+        ttk.Label(cfg, text="ビジョンモデル:").grid(row=5, column=0, sticky="w", **pad)
+        self.vision_model_frame = ttk.Frame(cfg)
+        self.vision_model_frame.grid(row=5, column=1, columnspan=2, sticky="w", **pad)
+        self.vision_model_combo = ttk.Combobox(
+            self.vision_model_frame, textvariable=self.vision_model_name, width=24)
+        self.vision_model_combo.pack(side="left")
+        self.vision_model_label = ttk.Label(
+            self.vision_model_frame, text="（例: moondream, llava:7b）", foreground="gray")
+        self.vision_model_label.pack(side="left", padx=(6, 0))
+
         if _VOICE_AVAILABLE and _HOTKEY_AVAILABLE:
-            ttk.Label(cfg, text="ボイスメモキー:").grid(row=4, column=0, sticky="w", **pad)
+            ttk.Label(cfg, text="ボイスメモキー:").grid(row=6, column=0, sticky="w", **pad)
             hk_frame = ttk.Frame(cfg)
-            hk_frame.grid(row=4, column=1, columnspan=2, sticky="w", **pad)
+            hk_frame.grid(row=6, column=1, columnspan=2, sticky="w", **pad)
             ttk.Entry(hk_frame, textvariable=self.hotkey_display,
                       state="readonly", width=20).pack(side="left")
             ttk.Button(hk_frame, text="変更...",
                        command=self._change_hotkey).pack(side="left", padx=(4, 0))
 
+        if _HOTKEY_AVAILABLE:
+            ttk.Label(cfg, text="スクショキー:").grid(row=7, column=0, sticky="w", **pad)
+            ss_hk_frame = ttk.Frame(cfg)
+            ss_hk_frame.grid(row=7, column=1, columnspan=2, sticky="w", **pad)
+            ttk.Entry(ss_hk_frame, textvariable=self.ss_hotkey_display,
+                      state="readonly", width=20).pack(side="left")
+            ttk.Button(ss_hk_frame, text="変更...",
+                       command=self._change_ss_hotkey).pack(side="left", padx=(4, 0))
+
         cfg.columnconfigure(1, weight=1)
+        self._on_mode_change()
+
+        # ── Notion連携フレーム ─────────────────────────────────────────
+        ncfg = ttk.LabelFrame(self.root, text="Notion連携（オプション）")
+        ncfg.pack(fill="x", **pad)
+
+        ttk.Label(ncfg, text="インテグレーションToken:").grid(row=0, column=0, sticky="w", **pad)
+        ttk.Entry(ncfg, textvariable=self.notion_token, width=38, show="*").grid(
+            row=0, column=1, sticky="ew", **pad)
+
+        ttk.Label(ncfg, text="データベースID:").grid(row=1, column=0, sticky="w", **pad)
+        ttk.Entry(ncfg, textvariable=self.notion_db_id, width=38).grid(
+            row=1, column=1, sticky="ew", **pad)
+
+        notion_btn_frame = ttk.Frame(ncfg)
+        notion_btn_frame.grid(row=2, column=0, columnspan=2, sticky="w", **pad)
+        ttk.Button(notion_btn_frame, text="接続テスト",
+                   command=self._test_notion).pack(side="left")
+        ttk.Button(notion_btn_frame, text="保存",
+                   command=self._save_notion_config).pack(side="left", padx=(4, 0))
+        ttk.Checkbutton(notion_btn_frame, text="記録停止時に自動送信",
+                        variable=self.notion_auto_push,
+                        command=self._save_notion_config).pack(side="left", padx=(12, 0))
+        if not _NOTION_AVAILABLE:
+            ttk.Label(notion_btn_frame,
+                      text="（notion-client未インストール）", foreground="gray"
+                      ).pack(side="left", padx=(8, 0))
+
+        ncfg.columnconfigure(1, weight=1)
 
         # ── コントロールフレーム ────────────────────────────────────────
         ctrl = ttk.Frame(self.root)
@@ -802,6 +1026,10 @@ class AARToolApp:
                                     command=self.toggle_voice_memo, width=18,
                                     state="disabled" if not _VOICE_AVAILABLE else "disabled")
         self.voice_btn.pack(side="left", padx=4)
+
+        self.ss_btn = ttk.Button(ctrl, text="📷 スクショ",
+                                 command=self.take_screenshot, width=12, state="disabled")
+        self.ss_btn.pack(side="left", padx=4)
 
         self.aar_btn = ttk.Button(ctrl, text="✦ AAR生成（任意）",
                                   command=self.generate_aar_action, width=18, state="disabled")
@@ -833,6 +1061,12 @@ class AARToolApp:
     # ------------------------------------------------------------------
     # 設定ハンドラ
     # ------------------------------------------------------------------
+    def _on_mode_change(self) -> None:
+        is_action = self.capture_mode.get() == CAPTURE_MODE_ACTION
+        state = "normal" if is_action else "disabled"
+        self.vision_model_combo.config(state=state)
+        self.vision_model_label.config(foreground="black" if is_action else "gray")
+
     def _on_format_change(self, _event=None) -> None:
         is_custom = self.aar_format.get() == "カスタム..."
         self.prompt_file_btn.config(state="normal" if is_custom else "disabled")
@@ -874,10 +1108,12 @@ class AARToolApp:
                 "Windows OCR（日本語）が使用できません。\n\n"
                 f"エラー: {e}\n\n"
                 "Windowsの設定 → 時刻と言語 → 言語 →\n"
-                "「日本語」の言語パックがインストールされているか確認してください。"
+                "「日本語」の言語パックがインストールされているか確認してください。\n\n"
+                "アクション（ビジョンAI）モードはOCR不要で使用できます。"
             )
-            self.root.after(0, lambda: self.status.set("OCR利用不可"))
-            self.root.after(0, lambda: messagebox.showerror("OCRエラー", msg))
+            self.root.after(0, lambda: self.status.set("OCR利用不可（アクションモードは使用可）"))
+            self.root.after(0, lambda: self.start_btn.config(state="normal"))
+            self.root.after(0, lambda: messagebox.showwarning("OCR警告", msg))
         finally:
             self.root.after(0, self.progress.stop)
 
@@ -891,6 +1127,7 @@ class AARToolApp:
                 self.model_combo["values"] = models
                 if self.model_name.get() not in models:
                     self.model_name.set(models[0])
+                self.vision_model_combo["values"] = models
             self.root.after(0, _update)
         except Exception:
             pass
@@ -915,6 +1152,47 @@ class AARToolApp:
             saved["voice_hotkey"] = cfg
             _save_config(saved)
 
+    def _change_ss_hotkey(self) -> None:
+        cfg = _capture_hotkey_dialog(self.root)
+        if cfg:
+            self._ss_hotkey_config = cfg
+            self.ss_hotkey_display.set(cfg["display"])
+            saved = _load_config()
+            saved["ss_hotkey"] = cfg
+            _save_config(saved)
+
+    def _save_notion_config(self) -> None:
+        saved = _load_config()
+        saved["notion_token"] = self.notion_token.get()
+        saved["notion_db_id"] = self.notion_db_id.get()
+        saved["notion_auto_push"] = self.notion_auto_push.get()
+        _save_config(saved)
+
+    def _test_notion(self) -> None:
+        if not _NOTION_AVAILABLE:
+            messagebox.showwarning(
+                "Notion",
+                "notion-clientがインストールされていません。\npip install notion-client"
+            )
+            return
+        token = self.notion_token.get().strip()
+        db_id = self.notion_db_id.get().strip()
+        if not token or not db_id:
+            messagebox.showwarning("Notion", "TokenとデータベースIDを入力してください。")
+            return
+        self._save_notion_config()
+
+        def _test():
+            try:
+                exporter = NotionExporter(token, db_id)
+                db_name = exporter.test_connection()
+                self.root.after(0, lambda: messagebox.showinfo(
+                    "Notion", f"接続成功！\nデータベース: {db_name}"))
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Notion", f"接続失敗:\n{e}"))
+        threading.Thread(target=_test, daemon=True).start()
+
     # ------------------------------------------------------------------
     # ログ表示ヘルパー
     # ------------------------------------------------------------------
@@ -938,22 +1216,35 @@ class AARToolApp:
     # 記録開始 / 停止
     # ------------------------------------------------------------------
     def start_recording(self) -> None:
+        self._voice_memo_paths = []
+        self._notion_page_id = None
         self.is_running = True
         self.start_btn.config(state="disabled")
         self.stop_btn.config(state="normal")
         self.aar_btn.config(state="disabled")
         self.window_combo.config(state="disabled")
-        hint = self._hotkey_config.get("display", "")
-        if _VOICE_AVAILABLE and _HOTKEY_AVAILABLE and hint:
-            self.status.set(f"記録中...  [{hint}: ボイスメモ切替]")
-            self._hotkey_listener.start(
-                self._hotkey_config,
-                lambda: self.root.after(0, self.toggle_voice_memo),
-            )
-        else:
-            self.status.set("記録中...")
+        hints = []
+        if _VOICE_AVAILABLE and _HOTKEY_AVAILABLE:
+            voice_hint = self._hotkey_config.get("display", "")
+            if voice_hint:
+                hints.append(f"{voice_hint}: ボイスメモ")
+                self._hotkey_listener.start(
+                    self._hotkey_config,
+                    lambda: self.root.after(0, self.toggle_voice_memo),
+                )
+        if _HOTKEY_AVAILABLE:
+            ss_hint = self._ss_hotkey_config.get("display", "")
+            if ss_hint:
+                hints.append(f"{ss_hint}: スクショ")
+                self._ss_hotkey_listener.start(
+                    self._ss_hotkey_config,
+                    lambda: self.root.after(0, self.take_screenshot),
+                )
+        hint_str = "  [" + " / ".join(hints) + "]" if hints else ""
+        self.status.set(f"記録中...{hint_str}")
         if _VOICE_AVAILABLE:
             self.voice_btn.config(state="normal")
+        self.ss_btn.config(state="normal")
 
         self.log_area.config(state="normal")
         self.log_area.delete("1.0", "end")
@@ -964,10 +1255,16 @@ class AARToolApp:
             f"[システム] 記録開始 ({datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')})"
             f"\nキャプチャ対象: {title}"
         )
+        mode = self.capture_mode.get()
+        self._append_log(
+            f"[システム] モード: {'アクション（ビジョンAI）' if mode == CAPTURE_MODE_ACTION else 'シミュレーション（OCR）'}"
+        )
         self.worker = CaptureWorker(
             log_callback=self._append_log,
             window_title=title,
             save_dir=self.save_dir.get() or _SAVE_DIR,
+            mode=mode,
+            vision_model=self.vision_model_name.get() or DEFAULT_VISION_MODEL,
         )
         self.worker.start()
 
@@ -976,6 +1273,7 @@ class AARToolApp:
             return
         self.stop_btn.config(state="disabled")
         self.voice_btn.config(state="disabled")
+        self.ss_btn.config(state="disabled")
         self.status.set("停止中...")
 
         # ボイスメモが ON なら停止して保存
@@ -986,6 +1284,30 @@ class AARToolApp:
             self.worker.stop()
             log_text = self.worker.get_log()
             memo_path = self.worker.get_memo_path()
+            end_time = datetime.datetime.now()
+
+            # Notion自動送信
+            if (log_text.strip() and _NOTION_AVAILABLE
+                    and self.notion_auto_push.get()
+                    and self.notion_token.get().strip()
+                    and self.notion_db_id.get().strip()):
+                try:
+                    exporter = NotionExporter(
+                        self.notion_token.get().strip(),
+                        self.notion_db_id.get().strip(),
+                    )
+                    start_time = self.worker._start_time or end_time
+                    page_id = exporter.push_session(
+                        self.window_title.get(),
+                        start_time, end_time,
+                        log_text, self.capture_mode.get(),
+                    )
+                    self._notion_page_id = page_id
+                except Exception as e:
+                    _write_error_log(f"Notion push_session error: {e}")
+                    self.root.after(0, lambda: messagebox.showwarning(
+                        "Notion", f"Notionへの送信に失敗しました:\n{e}"))
+
             if not log_text.strip():
                 self.root.after(0, lambda: messagebox.showwarning(
                     "ログなし",
@@ -993,8 +1315,9 @@ class AARToolApp:
                     f"詳細は {os.path.join(_BASE_DIR, 'error.log')} を確認してください。"
                 ))
             else:
+                notion_note = "\nNotionページにも送信しました。" if self._notion_page_id else ""
                 self.root.after(0, lambda: messagebox.showinfo(
-                    "保存完了", f"プレイメモを保存しました:\n{memo_path}"))
+                    "保存完了", f"プレイメモを保存しました:\n{memo_path}{notion_note}"))
             self.root.after(0, self._reset_ui_stopped)
 
         threading.Thread(target=_finish, daemon=True).start()
@@ -1002,8 +1325,10 @@ class AARToolApp:
     def _reset_ui_stopped(self) -> None:
         self.is_running = False
         self._hotkey_listener.stop()
+        self._ss_hotkey_listener.stop()
         self.start_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
+        self.ss_btn.config(state="disabled")
         self.aar_btn.config(state="normal")
         self.window_combo.config(state="normal")
         self.status.set("停止中")
@@ -1035,6 +1360,30 @@ class AARToolApp:
         except Exception as e:
             messagebox.showerror("ボイスメモエラー", f"録音を開始できませんでした:\n{e}")
 
+    def take_screenshot(self) -> None:
+        if not self.worker:
+            return
+        save_dir = self.save_dir.get() or _SAVE_DIR
+        game_title = self.window_title.get()
+        if game_title == WINDOW_ALL:
+            game_title = "全画面"
+        window_title = self.window_title.get()
+        ts = datetime.datetime.now()
+
+        def _do():
+            try:
+                img = _capture_game(window_title)
+                ss_dir = os.path.join(save_dir, "スクリーンショット")
+                os.makedirs(ss_dir, exist_ok=True)
+                game_safe = _safe_filename(game_title)
+                fname = f"Screenshot_{game_safe}_{ts.strftime('%Y%m%d_%H%M%S')}.png"
+                img.save(os.path.join(ss_dir, fname), "PNG")
+                self.root.after(0, lambda: self._append_log(
+                    f"[システム] スクリーンショット: スクリーンショット/{fname}"))
+            except Exception as e:
+                _write_error_log(f"Screenshot capture error: {e}")
+        threading.Thread(target=_do, daemon=True).start()
+
     def _capture_voice_screenshot(self, save_dir: str, game_title: str,
                                    ts: datetime.datetime) -> None:
         window_title = self.window_title.get()
@@ -1061,6 +1410,7 @@ class AARToolApp:
             def _save():
                 path = self.voice_recorder.stop()
                 if path:
+                    self._voice_memo_paths.append(path)
                     self.root.after(0, lambda: self._append_log(
                         f"[システム] ボイスメモ保存: {os.path.basename(path)}"))
             threading.Thread(target=_save, daemon=True).start()
@@ -1090,17 +1440,43 @@ class AARToolApp:
         self.status.set("AAR生成中（LLM処理）...")
         self.progress.start()
 
+        voice_contents: list[str] = []
+        for vp in list(self._voice_memo_paths):
+            try:
+                with open(vp, encoding="utf-8") as f:
+                    voice_contents.append(f.read().strip())
+            except Exception:
+                pass
+
         def _gen():
             try:
                 aar_text = generate_aar(
                     log_text,
                     model=self.model_name.get(),
                     template=template,
+                    voice_memos=voice_contents or None,
                     stream_callback=self._append_aar_preview,
                 )
                 filepath = save_aar(aar_text, save_dir=self.save_dir.get() or _SAVE_DIR)
+
+                # NotionページにAAR追記
+                notion_note = ""
+                if (self._notion_page_id and _NOTION_AVAILABLE
+                        and self.notion_token.get().strip()
+                        and self.notion_db_id.get().strip()):
+                    try:
+                        exporter = NotionExporter(
+                            self.notion_token.get().strip(),
+                            self.notion_db_id.get().strip(),
+                        )
+                        exporter.append_aar(self._notion_page_id, aar_text)
+                        notion_note = "\nNotionページにAARを追記しました。"
+                    except Exception as e:
+                        _write_error_log(f"Notion append_aar error: {e}")
+                        notion_note = f"\nNotion追記失敗: {e}"
+
                 self.root.after(0, lambda: messagebox.showinfo(
-                    "完了", f"AARを保存しました:\n{filepath}"))
+                    "完了", f"AARを保存しました:\n{filepath}{notion_note}"))
             except Exception as e:
                 self.root.after(0, lambda: messagebox.showerror(
                     "エラー", f"AAR生成中にエラー:\n{e}"))
