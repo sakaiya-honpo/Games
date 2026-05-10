@@ -34,6 +34,19 @@ all_hidden   = (
     + ollama_hidden
     + winrt_hidden
     + [
+        # collect_all が空を返した場合のフォールバック
+        'pyautogui',
+        'pygetwindow',
+        'winocr',
+        'ollama',
+        # pyautogui の依存
+        'pyscreeze',
+        'mouseinfo',
+        'pyrect',
+        # PIL
+        'PIL',
+        'PIL.Image',
+        'PIL.ImageGrab',
         'PIL._tkinter_finder',
         'requests',
         'tqdm',
