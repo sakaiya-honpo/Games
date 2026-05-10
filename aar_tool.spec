@@ -21,13 +21,15 @@ paddleocr_datas, paddleocr_binaries, paddleocr_hiddenimports = collect_all('padd
 
 # pyclipper は paddleocr の依存で動的ロードされる
 pyclipper_datas, pyclipper_binaries, pyclipper_hiddenimports = collect_all('pyclipper')
+pygetwindow_datas, pygetwindow_binaries, pygetwindow_hiddenimports = collect_all('pygetwindow')
 
-all_datas    = paddle_datas    + paddleocr_datas    + pyclipper_datas
-all_binaries = paddle_binaries + paddleocr_binaries + pyclipper_binaries
+all_datas    = paddle_datas    + paddleocr_datas    + pyclipper_datas    + pygetwindow_datas
+all_binaries = paddle_binaries + paddleocr_binaries + pyclipper_binaries + pygetwindow_binaries
 all_hidden   = (
     paddle_hiddenimports
     + paddleocr_hiddenimports
     + pyclipper_hiddenimports
+    + pygetwindow_hiddenimports
     + collect_submodules('skimage')
     + collect_submodules('scipy')
     + collect_submodules('cv2')
