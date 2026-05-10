@@ -14,6 +14,26 @@ _BASE_DIR = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else
 _SAVE_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "ゲームAAR")
 
 
+_CONFIG_FILE = os.path.join(_BASE_DIR, "config.json")
+_DEFAULT_HOTKEY: dict = {}  # 未設定: ユーザーが変更ダイアログで設定する
+
+
+def _load_config() -> dict:
+    try:
+        with open(_CONFIG_FILE, encoding="utf-8") as _f:
+            return json.load(_f)
+    except Exception:
+        return {}
+
+
+def _save_config(cfg: dict) -> None:
+    try:
+        with open(_CONFIG_FILE, "w", encoding="utf-8") as _f:
+            json.dump(cfg, _f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
 def _write_error_log(msg: str) -> None:
     log_path = os.path.join(_BASE_DIR, "error.log")
     try:
@@ -25,6 +45,7 @@ def _write_error_log(msg: str) -> None:
 
 try:
     import re
+    import json
     import subprocess
     import tempfile
     import threading
@@ -56,12 +77,19 @@ except Exception as _e:
         pass
     sys.exit(1)
 
-# オプション: pyaudio（ボイスメモ機能）
+# オプション: sounddevice（ボイスメモ録音）
 try:
-    import pyaudio
+    import sounddevice as _sd_check  # noqa: F401
     _VOICE_AVAILABLE = True
 except Exception:
     _VOICE_AVAILABLE = False
+
+# オプション: pynput（キーボード・マウス グローバルホットキー）
+try:
+    from pynput import keyboard as _pynput_kb, mouse as _pynput_mouse
+    _HOTKEY_AVAILABLE = True
+except Exception:
+    _HOTKEY_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # 設定
@@ -178,6 +206,149 @@ def _format_elapsed(delta) -> str:
     return f"{m:02d}:{s:02d}"
 
 
+def _key_to_pynput_str(key) -> str:
+    """pynput Key/KeyCode を設定保存用文字列に変換する。"""
+    if _HOTKEY_AVAILABLE:
+        Key, KeyCode = _pynput_kb.Key, _pynput_kb.KeyCode
+        if isinstance(key, Key):
+            name = key.name
+            for suffix in ("_l", "_r"):
+                if name.endswith(suffix):
+                    name = name[:-2]
+                    break
+            return f"<{name}>"
+        if isinstance(key, KeyCode):
+            return key.char.lower() if key.char else f"<{key.vk}>"
+    return str(key)
+
+
+def _hotkey_display(keys_str: list[str]) -> str:
+    mapping = {"<ctrl>": "Ctrl", "<shift>": "Shift", "<alt>": "Alt",
+               "<cmd>": "Win", "<space>": "Space", "<tab>": "Tab",
+               "<enter>": "Enter", "<backspace>": "BackSpace"}
+    parts = []
+    for s in keys_str:
+        if s in mapping:
+            parts.append(mapping[s])
+        else:
+            inner = s.strip("<>")
+            parts.append(inner.upper() if len(inner) == 1 else inner.capitalize())
+    return "+".join(parts)
+
+
+class VoiceHotkeyListener:
+    """pynput を使ってキーボード / マウスのグローバルホットキーを管理する。"""
+
+    def __init__(self):
+        self._listener = None
+
+    def start(self, config: dict, callback) -> None:
+        self.stop()
+        if not _HOTKEY_AVAILABLE or not config.get("type"):
+            return
+        try:
+            if config.get("type") == "mouse":
+                self._start_mouse(config.get("button", ""), callback)
+            else:
+                self._start_keyboard(config.get("keys", []), callback)
+        except Exception as e:
+            _write_error_log(f"VoiceHotkeyListener.start error: {e}")
+
+    def _start_keyboard(self, keys: list[str], callback) -> None:
+        combo = "+".join(keys)
+        hk = _pynput_kb.HotKey(_pynput_kb.HotKey.parse(combo), callback)
+        listener = _pynput_kb.Listener(
+            on_press=lambda k: hk.press(listener.canonical(k)),
+            on_release=lambda k: hk.release(listener.canonical(k)),
+        )
+        self._listener = listener
+        listener.start()
+
+    def _start_mouse(self, button_name: str, callback) -> None:
+        btn = _pynput_mouse.Button[button_name]
+        self._listener = _pynput_mouse.Listener(
+            on_click=lambda x, y, b, pressed: callback() if (pressed and b == btn) else None
+        )
+        self._listener.start()
+
+    def stop(self) -> None:
+        if self._listener:
+            try:
+                self._listener.stop()
+            except Exception:
+                pass
+            self._listener = None
+
+
+def _capture_hotkey_dialog(root: tk.Tk) -> dict | None:
+    """キー / マウスボタン入力待ちダイアログ。設定辞書か None を返す。"""
+    if not _HOTKEY_AVAILABLE:
+        return None
+
+    result: dict | None = None
+    dialog = tk.Toplevel(root)
+    dialog.title("ホットキー設定")
+    dialog.resizable(False, False)
+    dialog.grab_set()
+    dialog.focus_set()
+
+    ttk.Label(dialog, text="キー / マウスボタンを押してください",
+              font=("", 11)).pack(pady=(16, 4), padx=28)
+    hint_var = tk.StringVar(value="入力待ち...")
+    ttk.Label(dialog, textvariable=hint_var, foreground="gray",
+              font=("", 10)).pack(pady=2, padx=28)
+    ttk.Button(dialog, text="キャンセル", command=dialog.destroy).pack(pady=(8, 16))
+
+    pressed_mods: set = set()
+    _MODS = {
+        _pynput_kb.Key.ctrl, _pynput_kb.Key.ctrl_l, _pynput_kb.Key.ctrl_r,
+        _pynput_kb.Key.shift, _pynput_kb.Key.shift_l, _pynput_kb.Key.shift_r,
+        _pynput_kb.Key.alt, _pynput_kb.Key.alt_l, _pynput_kb.Key.alt_r,
+        _pynput_kb.Key.cmd, _pynput_kb.Key.cmd_l, _pynput_kb.Key.cmd_r,
+    }
+    kl = ml = None
+
+    def _done(cfg: dict) -> None:
+        nonlocal result
+        result = cfg
+        try:
+            if kl:
+                kl.stop()
+            if ml:
+                ml.stop()
+        except Exception:
+            pass
+        root.after(0, dialog.destroy)
+
+    def on_press(key):
+        if key in _MODS:
+            pressed_mods.add(key)
+        else:
+            all_keys = [_key_to_pynput_str(k) for k in pressed_mods] + [_key_to_pynput_str(key)]
+            display = _hotkey_display(all_keys)
+            root.after(0, lambda: hint_var.set(display))
+            _done({"type": "keyboard", "keys": all_keys, "display": display})
+
+    def on_release(key):
+        pressed_mods.discard(key)
+
+    def on_click(x, y, button, pressed):
+        if pressed:
+            bname = button.name
+            display = f"Mouse {bname.replace('button', 'Button')}"
+            _done({"type": "mouse", "button": bname, "display": display})
+
+    kl = _pynput_kb.Listener(on_press=on_press, on_release=on_release)
+    ml = _pynput_mouse.Listener(on_click=on_click)
+    kl.start()
+    ml.start()
+    dialog.protocol("WM_DELETE_WINDOW",
+                    lambda: (_done({"type": "_cancel"}) if result is None else None,
+                             dialog.destroy()))
+    dialog.wait_window()
+    return result if (result and result.get("type") != "_cancel") else None
+
+
 def _safe_filename(title: str, max_len: int = 20) -> str:
     safe = re.sub(r'[\\/:*?"<>|\s]+', '_', title).strip('_')
     return safe[:max_len] if safe else "unknown"
@@ -194,6 +365,80 @@ def capture_screen(region=None) -> Image.Image:
         )
         raw = sct.grab(mon)
         return Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+
+
+# ---------------------------------------------------------------------------
+# ウィンドウ直接キャプチャ（Win32 PrintWindow / オーバーレイなし）
+# ---------------------------------------------------------------------------
+def capture_window_only(title: str) -> Image.Image | None:
+    """指定タイトルのウィンドウ内容を PrintWindow で直接取得する。
+    mss のような画面コピーと違い、他ウィンドウが重なっていても映り込まない。
+    失敗時は None を返す。"""
+    import ctypes
+    import ctypes.wintypes as wt
+
+    user32 = ctypes.windll.user32
+    gdi32 = ctypes.windll.gdi32
+
+    # pygetwindow の部分一致でHWNDを取得
+    hwnd = 0
+    try:
+        wins = gw.getWindowsWithTitle(title)
+        if wins and hasattr(wins[0], "_hWnd"):
+            hwnd = wins[0]._hWnd
+    except Exception:
+        pass
+    if not hwnd:
+        hwnd = user32.FindWindowW(None, title)
+    if not hwnd:
+        return None
+
+    rect = wt.RECT()
+    user32.GetClientRect(hwnd, ctypes.byref(rect))
+    w, h = rect.right, rect.bottom
+    if w <= 0 or h <= 0:
+        return None
+
+    hdc = user32.GetDC(hwnd)
+    mdc = gdi32.CreateCompatibleDC(hdc)
+    bmp = gdi32.CreateCompatibleBitmap(hdc, w, h)
+    gdi32.SelectObject(mdc, bmp)
+
+    PW_RENDERFULLCONTENT = 2
+    ok = user32.PrintWindow(hwnd, mdc, PW_RENDERFULLCONTENT)
+
+    class _BmpInfo(ctypes.Structure):
+        _fields_ = [
+            ("biSize", ctypes.c_uint32), ("biWidth", ctypes.c_int32),
+            ("biHeight", ctypes.c_int32), ("biPlanes", ctypes.c_uint16),
+            ("biBitCount", ctypes.c_uint16), ("biCompression", ctypes.c_uint32),
+            ("biSizeImage", ctypes.c_uint32), ("biXPelsPerMeter", ctypes.c_int32),
+            ("biYPelsPerMeter", ctypes.c_int32), ("biClrUsed", ctypes.c_uint32),
+            ("biClrImportant", ctypes.c_uint32),
+        ]
+
+    bmi = _BmpInfo(biSize=ctypes.sizeof(_BmpInfo), biWidth=w, biHeight=-h,
+                   biPlanes=1, biBitCount=32)
+    buf = ctypes.create_string_buffer(w * h * 4)
+    gdi32.GetDIBits(mdc, bmp, 0, h, buf, ctypes.byref(bmi), 0)
+
+    gdi32.DeleteObject(bmp)
+    gdi32.DeleteDC(mdc)
+    user32.ReleaseDC(hwnd, hdc)
+
+    if not ok:
+        return None
+    return Image.frombytes("RGBA", (w, h), buf.raw, "raw", "BGRA").convert("RGB")
+
+
+def _capture_game(window_title: str) -> Image.Image:
+    """指定ウィンドウ専用キャプチャ。失敗時のみ画面領域コピーにフォールバック。"""
+    if window_title != WINDOW_ALL:
+        img = capture_window_only(window_title)
+        if img is not None:
+            return img
+    region = get_window_region(window_title)
+    return capture_screen(region)
 
 
 # ---------------------------------------------------------------------------
@@ -268,70 +513,54 @@ def get_window_region(title: str) -> tuple[int, int, int, int] | None:
 # ボイスレコーダー（pyaudio / オプション）
 # ---------------------------------------------------------------------------
 class VoiceRecorder:
-    CHUNK = 1024
+    RATE = 16000  # 16kHz: STT最適
     CHANNELS = 1
-    RATE = 16000  # 16kHz: STT向け最適
 
     def __init__(self, save_dir: str, game_title: str = ""):
         self._save_dir = save_dir
         self._game_title = game_title
         self._frames: list[bytes] = []
-        self._stop_event = threading.Event()
-        self._thread: threading.Thread | None = None
-        self._pa = None
+        self._lock = threading.Lock()
         self._stream = None
         self._start_time: datetime.datetime | None = None
 
     def start(self) -> None:
-        import pyaudio as _pa
+        import sounddevice as sd
         self._frames = []
-        self._stop_event.clear()
         self._start_time = datetime.datetime.now()
-        self._pa = _pa.PyAudio()
-        self._stream = self._pa.open(
-            format=_pa.paInt16,
+        self._stream = sd.InputStream(
+            samplerate=self.RATE,
             channels=self.CHANNELS,
-            rate=self.RATE,
-            input=True,
-            frames_per_buffer=self.CHUNK,
+            dtype="int16",
+            blocksize=1024,
+            callback=self._callback,
         )
-        self._thread = threading.Thread(target=self._record, daemon=True)
-        self._thread.start()
+        self._stream.start()
+
+    def _callback(self, indata, frames, time_info, status) -> None:
+        with self._lock:
+            self._frames.append(bytes(indata))
 
     def stop(self) -> str | None:
-        self._stop_event.set()
-        if self._thread:
-            self._thread.join(timeout=5)
         if self._stream:
             try:
-                self._stream.stop_stream()
+                self._stream.stop()
                 self._stream.close()
             except Exception:
                 pass
-        if self._pa:
-            try:
-                self._pa.terminate()
-            except Exception:
-                pass
-        if self._frames:
-            return self._transcribe_and_save()
+        with self._lock:
+            frames = list(self._frames)
+        if frames:
+            return self._transcribe_and_save(frames)
         return None
 
-    def _record(self) -> None:
-        while not self._stop_event.is_set():
-            try:
-                data = self._stream.read(self.CHUNK, exception_on_overflow=False)
-                self._frames.append(data)
-            except Exception:
-                break
-
-    def _transcribe_and_save(self) -> str:
+    def _transcribe_and_save(self, frames: list[bytes]) -> str:
         import speech_recognition as sr
         end_time = datetime.datetime.now()
         start_time = self._start_time or end_time
         elapsed = _format_elapsed(end_time - start_time)
 
-        audio_bytes = b"".join(self._frames)
+        audio_bytes = b"".join(frames)
         recognizer = sr.Recognizer()
         audio_data = sr.AudioData(audio_bytes, self.RATE, 2)
         try:
@@ -401,8 +630,7 @@ class CaptureWorker:
     def _run(self) -> None:
         while not self._stop_event.is_set():
             try:
-                region = get_window_region(self._window_title)
-                screenshot = capture_screen(region)
+                screenshot = _capture_game(self._window_title)
                 current_text = ocr_image(screenshot)
                 if self._is_new_content(current_text):
                     now = datetime.datetime.now()
@@ -481,18 +709,23 @@ def save_aar(aar_text: str, save_dir: str | None = None) -> str:
 class AARToolApp:
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("ゲームプレイ記録ツール")
+        self.root.title("プレイメモメーカー")
         self.root.resizable(True, True)
 
         self.worker: CaptureWorker | None = None
         self.voice_recorder: VoiceRecorder | None = None
         self.voice_on = False
         self._custom_prompt_path: str | None = None
+        self._hotkey_listener = VoiceHotkeyListener()
+        cfg = _load_config()
+        self._hotkey_config: dict = cfg.get("voice_hotkey", dict(_DEFAULT_HOTKEY))
 
         self.save_dir = tk.StringVar(value=_SAVE_DIR)
         self.model_name = tk.StringVar(value=DEFAULT_MODEL)
         self.window_title = tk.StringVar(value=WINDOW_ALL)
         self.aar_format = tk.StringVar(value=list(AAR_FORMATS.keys())[0])
+        self.hotkey_display = tk.StringVar(
+            value=self._hotkey_config.get("display") or "未設定")
         self.status = tk.StringVar(value="OCR確認中...")
         self.is_running = False
 
@@ -541,6 +774,16 @@ class AARToolApp:
         ttk.Entry(cfg, textvariable=self.save_dir, width=38).grid(
             row=3, column=1, sticky="ew", **pad)
         ttk.Button(cfg, text="参照...", command=self._browse_dir).grid(row=3, column=2, **pad)
+
+        if _VOICE_AVAILABLE and _HOTKEY_AVAILABLE:
+            ttk.Label(cfg, text="ボイスメモキー:").grid(row=4, column=0, sticky="w", **pad)
+            hk_frame = ttk.Frame(cfg)
+            hk_frame.grid(row=4, column=1, columnspan=2, sticky="w", **pad)
+            ttk.Entry(hk_frame, textvariable=self.hotkey_display,
+                      state="readonly", width=20).pack(side="left")
+            ttk.Button(hk_frame, text="変更...",
+                       command=self._change_hotkey).pack(side="left", padx=(4, 0))
+
         cfg.columnconfigure(1, weight=1)
 
         # ── コントロールフレーム ────────────────────────────────────────
@@ -663,6 +906,15 @@ class AARToolApp:
         if d:
             self.save_dir.set(d)
 
+    def _change_hotkey(self) -> None:
+        cfg = _capture_hotkey_dialog(self.root)
+        if cfg:
+            self._hotkey_config = cfg
+            self.hotkey_display.set(cfg["display"])
+            saved = _load_config()
+            saved["voice_hotkey"] = cfg
+            _save_config(saved)
+
     # ------------------------------------------------------------------
     # ログ表示ヘルパー
     # ------------------------------------------------------------------
@@ -691,7 +943,15 @@ class AARToolApp:
         self.stop_btn.config(state="normal")
         self.aar_btn.config(state="disabled")
         self.window_combo.config(state="disabled")
-        self.status.set("記録中...")
+        hint = self._hotkey_config.get("display", "")
+        if _VOICE_AVAILABLE and _HOTKEY_AVAILABLE and hint:
+            self.status.set(f"記録中...  [{hint}: ボイスメモ切替]")
+            self._hotkey_listener.start(
+                self._hotkey_config,
+                lambda: self.root.after(0, self.toggle_voice_memo),
+            )
+        else:
+            self.status.set("記録中...")
         if _VOICE_AVAILABLE:
             self.voice_btn.config(state="normal")
 
@@ -741,6 +1001,7 @@ class AARToolApp:
 
     def _reset_ui_stopped(self) -> None:
         self.is_running = False
+        self._hotkey_listener.stop()
         self.start_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
         self.aar_btn.config(state="normal")
@@ -776,10 +1037,11 @@ class AARToolApp:
 
     def _capture_voice_screenshot(self, save_dir: str, game_title: str,
                                    ts: datetime.datetime) -> None:
+        window_title = self.window_title.get()
+
         def _do():
             try:
-                region = get_window_region(self.window_title.get())
-                img = capture_screen(region)
+                img = _capture_game(window_title)
                 ss_dir = os.path.join(save_dir, "スクリーンショット")
                 os.makedirs(ss_dir, exist_ok=True)
                 game_safe = _safe_filename(game_title)

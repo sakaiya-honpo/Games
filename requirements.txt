@@ -2,5 +2,6 @@ mss>=9.0.0
 pygetwindow>=0.0.9
 ollama>=0.2.0
 Pillow>=10.0.0
-pyaudio>=0.2.14
+sounddevice>=0.4.6
 SpeechRecognition>=3.10.0
+pynput>=1.7.6

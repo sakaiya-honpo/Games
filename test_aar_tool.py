@@ -17,7 +17,8 @@ import types, unittest.mock as mock
 # Windows専用モジュールをスタブ化してインポートエラーを回避
 for stub in ('mss', 'pygetwindow', 'ollama', 'tkinter',
              'tkinter.ttk', 'tkinter.scrolledtext', 'tkinter.filedialog',
-             'tkinter.messagebox', 'pyaudio', 'speech_recognition'):
+             'tkinter.messagebox', 'sounddevice', 'speech_recognition',
+             'pynput', 'pynput.keyboard', 'pynput.mouse'):
     sys.modules.setdefault(stub, types.ModuleType(stub))
 
 # tkinter.Tk / ttk.* をスタブ
