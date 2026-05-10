@@ -345,11 +345,13 @@ class VoiceRecorder:
         ts = start_time.strftime("%Y%m%d_%H%M%S")
         game = _safe_filename(self._game_title) if self._game_title else "unknown"
         path = os.path.join(self._save_dir, f"VoiceMemo_{game}_{ts}.txt")
+        ss_ref = f"スクリーンショット/Screenshot_{game}_{ts}.png"
         with open(path, "w", encoding="utf-8") as f:
             f.write(f"# ボイスメモ\n")
-            f.write(f"ゲーム : {self._game_title or '全画面'}\n")
-            f.write(f"開始   : {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"終了   : {end_time.strftime('%Y-%m-%d %H:%M:%S')} (+{elapsed})\n\n")
+            f.write(f"ゲーム         : {self._game_title or '全画面'}\n")
+            f.write(f"開始           : {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"終了           : {end_time.strftime('%Y-%m-%d %H:%M:%S')} (+{elapsed})\n")
+            f.write(f"スクリーンショット: {ss_ref}\n\n")
             f.write(text + "\n")
         return path
 
@@ -766,8 +768,29 @@ class AARToolApp:
             self.voice_btn.config(text="🎙 ボイスメモ: ON", style="Accent.TButton"
                                    if "Accent.TButton" in ttk.Style().theme_names() else "")
             self._append_log("[システム] ボイスメモ録音開始")
+            # 録音開始タイミングのスクリーンショットを非同期保存
+            self._capture_voice_screenshot(
+                save_dir, game_title, self.voice_recorder._start_time)
         except Exception as e:
             messagebox.showerror("ボイスメモエラー", f"録音を開始できませんでした:\n{e}")
+
+    def _capture_voice_screenshot(self, save_dir: str, game_title: str,
+                                   ts: datetime.datetime) -> None:
+        def _do():
+            try:
+                region = get_window_region(self.window_title.get())
+                img = capture_screen(region)
+                ss_dir = os.path.join(save_dir, "スクリーンショット")
+                os.makedirs(ss_dir, exist_ok=True)
+                game_safe = _safe_filename(game_title)
+                ts_str = ts.strftime("%Y%m%d_%H%M%S")
+                fname = f"Screenshot_{game_safe}_{ts_str}.png"
+                img.save(os.path.join(ss_dir, fname), "PNG")
+                self.root.after(0, lambda: self._append_log(
+                    f"[システム] スクリーンショット: スクリーンショット/{fname}"))
+            except Exception as e:
+                _write_error_log(f"Screenshot capture error: {e}")
+        threading.Thread(target=_do, daemon=True).start()
 
     def _stop_voice_memo(self) -> None:
         self.voice_on = False
