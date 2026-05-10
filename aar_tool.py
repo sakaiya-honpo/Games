@@ -115,6 +115,7 @@ function Await($t) {
 }
 [void][Windows.Media.Ocr.OcrEngine,Windows.Foundation,ContentType=WindowsRuntime]
 [void][Windows.Graphics.Imaging.BitmapDecoder,Windows.Foundation,ContentType=WindowsRuntime]
+[void][Windows.Globalization.Language,Windows.Foundation,ContentType=WindowsRuntime]
 $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage(
     [Windows.Globalization.Language]::new($env:OCR_LANG))
 if (-not $engine) { Write-Error 'OCR engine unavailable'; exit 1 }
@@ -138,6 +139,7 @@ def ocr_image(pil_image) -> str:
         r = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", _PS_OCR_SCRIPT],
             capture_output=True, text=True, timeout=30, env=env,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW: コンソールウィンドウを非表示
         )
         if r.returncode != 0:
             _write_error_log(f"OCR stderr: {r.stderr}")
