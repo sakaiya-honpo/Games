@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+build/
+dist/
+*.spec.bak
+ocr_log.txt
+ocr_error.log
