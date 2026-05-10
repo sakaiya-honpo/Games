@@ -26,7 +26,8 @@ def _write_error_log(msg: str) -> None:
 
 
 try:
-    import asyncio
+    import subprocess
+    import tempfile
     import threading
     import difflib
     import traceback
@@ -34,13 +35,11 @@ try:
     from tkinter import ttk, scrolledtext, filedialog, messagebox
     import pyautogui
     import pygetwindow as gw
-    import winocr
     import ollama
     os.makedirs(_SAVE_DIR, exist_ok=True)
 except Exception as _e:
     import traceback as _tb
     _write_error_log(_tb.format_exc())
-    # tkinter だけは別途試みてエラーダイアログを表示
     try:
         import tkinter as _tk
         from tkinter import messagebox as _mb
@@ -96,18 +95,56 @@ AAR_PROMPT_TEMPLATE = """\
 
 
 # ---------------------------------------------------------------------------
-# Windows OCR ユーティリティ
+# Windows OCR ユーティリティ（PowerShell subprocess 経由）
 # ---------------------------------------------------------------------------
+_PS_OCR_SCRIPT = """\
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+function Await($t) {
+    $a = [System.WindowsRuntimeSystemExtensions]::AsTask($t)
+    $a.Wait() | Out-Null; $a.Result
+}
+[void][Windows.Media.Ocr.OcrEngine,Windows.Foundation,ContentType=WindowsRuntime]
+[void][Windows.Graphics.Imaging.BitmapDecoder,Windows.Foundation,ContentType=WindowsRuntime]
+$engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage(
+    [Windows.Globalization.Language]::new($env:OCR_LANG))
+if (-not $engine) { Write-Error 'OCR engine unavailable'; exit 1 }
+$stream = [System.IO.File]::OpenRead($env:IMG_PATH)
+try {
+    $dec = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream))
+    $bmp = Await ($dec.GetSoftwareBitmapAsync())
+    (Await ($engine.RecognizeAsync($bmp))).Text
+} finally { $stream.Close() }
+"""
+
+
 def ocr_image(pil_image) -> str:
-    result = asyncio.run(winocr.recognize_pil(pil_image, OCR_LANG))
-    return result.text if result else ""
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+        tmp_path = f.name
+    try:
+        pil_image.save(tmp_path, "PNG")
+        env = os.environ.copy()
+        env["IMG_PATH"] = tmp_path
+        env["OCR_LANG"] = OCR_LANG
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", _PS_OCR_SCRIPT],
+            capture_output=True, text=True, timeout=30, env=env,
+        )
+        return r.stdout.strip()
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
 
 
 def check_ocr_available() -> None:
     """起動時チェック: 日本語 OCR が使用可能か確認。失敗時は例外を送出。"""
     from PIL import Image
     test_img = Image.new("RGB", (10, 10), color=(255, 255, 255))
-    asyncio.run(winocr.recognize_pil(test_img, OCR_LANG))
+    result = ocr_image(test_img)
+    # result が None でなければ（空文字でも）OK
+    if result is None:
+        raise RuntimeError("Windows OCR （日本語）を初期化できませんでした。")
 
 
 # ---------------------------------------------------------------------------
