@@ -10,6 +10,7 @@ import difflib
 import datetime
 import os
 import sys
+import traceback
 import tkinter as tk
 from tkinter import ttk, scrolledtext, filedialog, messagebox
 
@@ -338,14 +339,23 @@ class AARToolApp:
             self.root.after(0, lambda: self.start_btn.config(state="normal"))
             self.root.after(0, lambda: self.retry_btn.pack_forget())
         except Exception as e:
+            tb = traceback.format_exc()
+            log_path = os.path.join(_SAVE_DIR, "ocr_error.log")
+            try:
+                with open(log_path, "a", encoding="utf-8") as f:
+                    f.write(f"\n[{datetime.datetime.now()}]\n{tb}\n")
+            except Exception:
+                pass
+            msg = (
+                f"OCRエンジンの初期化に失敗しました。\n\n"
+                f"エラー: {e}\n\n"
+                f"詳細ログ: {log_path}\n\n"
+                f"初回起動時はインターネット接続が必要です（モデルDL約400MB）。\n"
+                f"接続を確認して「OCR 再試行」ボタンを押してください。"
+            )
             self.root.after(0, lambda: self.status.set("OCR初期化失敗 — 再試行してください"))
             self.root.after(0, lambda: self.retry_btn.pack(side="left", padx=4))
-            self.root.after(0, lambda: messagebox.showerror(
-                "OCR初期化エラー",
-                f"OCRエンジンの初期化に失敗しました。\n\n"
-                f"原因: {e}\n\n"
-                f"初回起動時はインターネット接続が必要です（モデルDL約400MB）。\n"
-                f"接続を確認して「OCR 再試行」ボタンを押してください。"))
+            self.root.after(0, lambda: messagebox.showerror("OCR初期化エラー", msg))
         finally:
             self.root.after(0, self.progress.stop)
 
