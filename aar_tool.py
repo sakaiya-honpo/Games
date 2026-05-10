@@ -96,9 +96,18 @@ except Exception:
 # ---------------------------------------------------------------------------
 CAPTURE_INTERVAL = 10
 SIMILARITY_THRESHOLD = 0.95
+VISION_INTERVAL = 45
 OCR_LANG = "ja"
 DEFAULT_MODEL = "qwen2.5:7b"
+DEFAULT_VISION_MODEL = "moondream"
 WINDOW_ALL = "（全画面）"
+CAPTURE_MODE_SIMULATION = "simulation"
+CAPTURE_MODE_ACTION = "action"
+VISION_PROMPT = (
+    "このゲーム画面で今何が起きているか、"
+    "プレイヤーの状況・場所・重要なイベントを中心に日本語で1〜3文で説明してください。"
+    "UIラベルや数値の羅列は無視し、ゲームの状況だけを説明してください。"
+)
 
 # ---------------------------------------------------------------------------
 # AAR プロンプトテンプレート（3形式）
@@ -480,6 +489,19 @@ def _clean_ocr(text: str) -> str:
     return text.strip()
 
 
+def describe_image(pil_image: Image.Image, model: str) -> str:
+    import base64
+    from io import BytesIO
+    buf = BytesIO()
+    pil_image.save(buf, format="PNG")
+    img_b64 = base64.b64encode(buf.getvalue()).decode()
+    resp = ollama.chat(
+        model=model,
+        messages=[{"role": "user", "content": VISION_PROMPT, "images": [img_b64]}],
+    )
+    return resp["message"]["content"].strip()
+
+
 def check_ocr_available() -> None:
     exe = _ocr_exe()
     if not os.path.exists(exe):
@@ -602,7 +624,9 @@ class VoiceRecorder:
 # ---------------------------------------------------------------------------
 class CaptureWorker:
     def __init__(self, log_callback=None, window_title: str = WINDOW_ALL,
-                 save_dir: str | None = None):
+                 save_dir: str | None = None,
+                 mode: str = CAPTURE_MODE_SIMULATION,
+                 vision_model: str = DEFAULT_VISION_MODEL):
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._last_text = ""
@@ -613,6 +637,8 @@ class CaptureWorker:
         self._save_dir = save_dir or _SAVE_DIR
         self._memo_path: str | None = None
         self._start_time: datetime.datetime | None = None
+        self._mode = mode
+        self._vision_model = vision_model
 
     def start(self) -> None:
         self._stop_event.clear()
@@ -643,8 +669,13 @@ class CaptureWorker:
         while not self._stop_event.is_set():
             try:
                 screenshot = _capture_game(self._window_title)
-                current_text = ocr_image(screenshot)
-                if self._is_new_content(current_text):
+                if self._mode == CAPTURE_MODE_ACTION:
+                    current_text = describe_image(screenshot, self._vision_model)
+                    save = bool(current_text.strip())
+                else:
+                    current_text = ocr_image(screenshot)
+                    save = self._is_new_content(current_text)
+                if save:
                     now = datetime.datetime.now()
                     elapsed = _format_elapsed(now - self._start_time) if self._start_time else "00:00"
                     timestamp = now.strftime("%H:%M:%S")
@@ -657,7 +688,8 @@ class CaptureWorker:
             except Exception as e:
                 if self._log_callback:
                     self._log_callback(f"[ERROR] キャプチャ中にエラー: {e}")
-            self._stop_event.wait(timeout=CAPTURE_INTERVAL)
+            interval = VISION_INTERVAL if self._mode == CAPTURE_MODE_ACTION else CAPTURE_INTERVAL
+            self._stop_event.wait(timeout=interval)
 
     def _is_new_content(self, text: str) -> bool:
         if not text.strip():
@@ -748,6 +780,8 @@ class AARToolApp:
         self.model_name = tk.StringVar(value=DEFAULT_MODEL)
         self.window_title = tk.StringVar(value=WINDOW_ALL)
         self.aar_format = tk.StringVar(value=list(AAR_FORMATS.keys())[0])
+        self.capture_mode = tk.StringVar(value=CAPTURE_MODE_SIMULATION)
+        self.vision_model_name = tk.StringVar(value=DEFAULT_VISION_MODEL)
         self.hotkey_display = tk.StringVar(
             value=self._hotkey_config.get("display") or "未設定")
         self.ss_hotkey_display = tk.StringVar(
@@ -801,25 +835,46 @@ class AARToolApp:
             row=3, column=1, sticky="ew", **pad)
         ttk.Button(cfg, text="参照...", command=self._browse_dir).grid(row=3, column=2, **pad)
 
+        ttk.Label(cfg, text="キャプチャモード:").grid(row=4, column=0, sticky="w", **pad)
+        mode_frame = ttk.Frame(cfg)
+        mode_frame.grid(row=4, column=1, columnspan=2, sticky="w", **pad)
+        ttk.Radiobutton(mode_frame, text="シミュレーション（OCR）",
+                        variable=self.capture_mode, value=CAPTURE_MODE_SIMULATION,
+                        command=self._on_mode_change).pack(side="left")
+        ttk.Radiobutton(mode_frame, text="アクション（ビジョンAI）",
+                        variable=self.capture_mode, value=CAPTURE_MODE_ACTION,
+                        command=self._on_mode_change).pack(side="left", padx=(12, 0))
+
+        ttk.Label(cfg, text="ビジョンモデル:").grid(row=5, column=0, sticky="w", **pad)
+        self.vision_model_frame = ttk.Frame(cfg)
+        self.vision_model_frame.grid(row=5, column=1, columnspan=2, sticky="w", **pad)
+        self.vision_model_combo = ttk.Combobox(
+            self.vision_model_frame, textvariable=self.vision_model_name, width=24)
+        self.vision_model_combo.pack(side="left")
+        self.vision_model_label = ttk.Label(
+            self.vision_model_frame, text="（例: moondream, llava:7b）", foreground="gray")
+        self.vision_model_label.pack(side="left", padx=(6, 0))
+
         if _VOICE_AVAILABLE and _HOTKEY_AVAILABLE:
-            ttk.Label(cfg, text="ボイスメモキー:").grid(row=4, column=0, sticky="w", **pad)
+            ttk.Label(cfg, text="ボイスメモキー:").grid(row=6, column=0, sticky="w", **pad)
             hk_frame = ttk.Frame(cfg)
-            hk_frame.grid(row=4, column=1, columnspan=2, sticky="w", **pad)
+            hk_frame.grid(row=6, column=1, columnspan=2, sticky="w", **pad)
             ttk.Entry(hk_frame, textvariable=self.hotkey_display,
                       state="readonly", width=20).pack(side="left")
             ttk.Button(hk_frame, text="変更...",
                        command=self._change_hotkey).pack(side="left", padx=(4, 0))
 
         if _HOTKEY_AVAILABLE:
-            ttk.Label(cfg, text="スクショキー:").grid(row=5, column=0, sticky="w", **pad)
+            ttk.Label(cfg, text="スクショキー:").grid(row=7, column=0, sticky="w", **pad)
             ss_hk_frame = ttk.Frame(cfg)
-            ss_hk_frame.grid(row=5, column=1, columnspan=2, sticky="w", **pad)
+            ss_hk_frame.grid(row=7, column=1, columnspan=2, sticky="w", **pad)
             ttk.Entry(ss_hk_frame, textvariable=self.ss_hotkey_display,
                       state="readonly", width=20).pack(side="left")
             ttk.Button(ss_hk_frame, text="変更...",
                        command=self._change_ss_hotkey).pack(side="left", padx=(4, 0))
 
         cfg.columnconfigure(1, weight=1)
+        self._on_mode_change()
 
         # ── コントロールフレーム ────────────────────────────────────────
         ctrl = ttk.Frame(self.root)
@@ -872,6 +927,12 @@ class AARToolApp:
     # ------------------------------------------------------------------
     # 設定ハンドラ
     # ------------------------------------------------------------------
+    def _on_mode_change(self) -> None:
+        is_action = self.capture_mode.get() == CAPTURE_MODE_ACTION
+        state = "normal" if is_action else "disabled"
+        self.vision_model_combo.config(state=state)
+        self.vision_model_label.config(foreground="black" if is_action else "gray")
+
     def _on_format_change(self, _event=None) -> None:
         is_custom = self.aar_format.get() == "カスタム..."
         self.prompt_file_btn.config(state="normal" if is_custom else "disabled")
@@ -913,10 +974,12 @@ class AARToolApp:
                 "Windows OCR（日本語）が使用できません。\n\n"
                 f"エラー: {e}\n\n"
                 "Windowsの設定 → 時刻と言語 → 言語 →\n"
-                "「日本語」の言語パックがインストールされているか確認してください。"
+                "「日本語」の言語パックがインストールされているか確認してください。\n\n"
+                "アクション（ビジョンAI）モードはOCR不要で使用できます。"
             )
-            self.root.after(0, lambda: self.status.set("OCR利用不可"))
-            self.root.after(0, lambda: messagebox.showerror("OCRエラー", msg))
+            self.root.after(0, lambda: self.status.set("OCR利用不可（アクションモードは使用可）"))
+            self.root.after(0, lambda: self.start_btn.config(state="normal"))
+            self.root.after(0, lambda: messagebox.showwarning("OCR警告", msg))
         finally:
             self.root.after(0, self.progress.stop)
 
@@ -930,6 +993,7 @@ class AARToolApp:
                 self.model_combo["values"] = models
                 if self.model_name.get() not in models:
                     self.model_name.set(models[0])
+                self.vision_model_combo["values"] = models
             self.root.after(0, _update)
         except Exception:
             pass
@@ -1024,10 +1088,16 @@ class AARToolApp:
             f"[システム] 記録開始 ({datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')})"
             f"\nキャプチャ対象: {title}"
         )
+        mode = self.capture_mode.get()
+        self._append_log(
+            f"[システム] モード: {'アクション（ビジョンAI）' if mode == CAPTURE_MODE_ACTION else 'シミュレーション（OCR）'}"
+        )
         self.worker = CaptureWorker(
             log_callback=self._append_log,
             window_title=title,
             save_dir=self.save_dir.get() or _SAVE_DIR,
+            mode=mode,
+            vision_model=self.vision_model_name.get() or DEFAULT_VISION_MODEL,
         )
         self.worker.start()
 
