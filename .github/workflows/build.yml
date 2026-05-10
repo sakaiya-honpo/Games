@@ -1,10 +1,10 @@
-name: Build Windows EXE
+name: Build Windows Package
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:  # 手動実行ボタン
+  workflow_dispatch:
 
 jobs:
   build:
@@ -14,23 +14,71 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Build portable package
+        shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller>=6.0
+          $ErrorActionPreference = "Stop"
+          $dist = "dist\AARTool"
+          New-Item -ItemType Directory -Path $dist -Force | Out-Null
 
-      - name: Build EXE with PyInstaller
-        run: pyinstaller aar_tool.spec
+          # ---------------------------------------------------------------
+          # 1. 依存パッケージをフォルダに直接インストール
+          # ---------------------------------------------------------------
+          $pkgs = "$dist\Lib\site-packages"
+          New-Item -ItemType Directory -Path $pkgs -Force | Out-Null
+          pip install pyautogui pygetwindow winocr ollama Pillow `
+            --target $pkgs --no-warn-script-location
+
+          # ---------------------------------------------------------------
+          # 2. Python embeddable をダウンロードして展開
+          # ---------------------------------------------------------------
+          $pyver = "3.11.9"
+          $url   = "https://www.python.org/ftp/python/$pyver/python-$pyver-embed-amd64.zip"
+          Invoke-WebRequest $url -OutFile python_embed.zip
+          Expand-Archive python_embed.zip -DestinationPath $dist -Force
+
+          # ---------------------------------------------------------------
+          # 3. ._pth に site-packages パスを追加してインポートできるようにする
+          # ---------------------------------------------------------------
+          $pth = Get-ChildItem $dist -Filter "python311._pth" | Select-Object -First 1
+          $lines = Get-Content $pth.FullName
+          $lines = $lines -replace '#import site', 'import site'
+          $lines += "Lib\site-packages"
+          Set-Content $pth.FullName ($lines -join "`n")
+
+          # ---------------------------------------------------------------
+          # 4. tkinter サポートファイルを Python インストール先からコピー
+          # ---------------------------------------------------------------
+          $pyDir  = Split-Path (Get-Command python).Path
+          $dlls   = "$pyDir\DLLs"
+          foreach ($f in @("_tkinter.pyd","tcl86t.dll","tk86t.dll","zlib1.dll")) {
+            if (Test-Path "$dlls\$f") { Copy-Item "$dlls\$f" $dist }
+          }
+          if (Test-Path "$pyDir\tcl") {
+            Copy-Item "$pyDir\tcl" "$dist\tcl" -Recurse -Force
+          }
+
+          # ---------------------------------------------------------------
+          # 5. アプリ本体をコピー
+          # ---------------------------------------------------------------
+          Copy-Item aar_tool.py $dist\
+
+          # ---------------------------------------------------------------
+          # 6. ランチャー作成（コンソールなし）
+          # ---------------------------------------------------------------
+          $bat = '@echo off' + "`r`n" +
+                 'cd /d "%~dp0"' + "`r`n" +
+                 'start "" "%~dp0pythonw.exe" "%~dp0aar_tool.py"'
+          Set-Content "$dist\AARTool.bat" $bat -Encoding ASCII
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: AARTool-Windows
-          path: dist/AARTool/
+          path: dist\AARTool\
           retention-days: 30
