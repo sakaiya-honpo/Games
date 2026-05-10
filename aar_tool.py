@@ -539,7 +539,7 @@ class VoiceRecorder:
 
     def _callback(self, indata, frames, time_info, status) -> None:
         with self._lock:
-            self._frames.append(bytes(indata))
+            self._frames.append(indata.flatten().tobytes())
 
     def stop(self) -> str | None:
         if self._stream:
@@ -556,32 +556,65 @@ class VoiceRecorder:
 
     def _transcribe_and_save(self, frames: list[bytes]) -> str:
         import speech_recognition as sr
+        import tempfile
         end_time = datetime.datetime.now()
         start_time = self._start_time or end_time
         elapsed = _format_elapsed(end_time - start_time)
 
-        audio_bytes = b"".join(frames)
-        recognizer = sr.Recognizer()
-        audio_data = sr.AudioData(audio_bytes, self.RATE, 2)
+        # PCM データを一時 WAV に書き出してから認識（フォーマット問題を回避）
+        tmp_wav = None
+        text = ""
         try:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                tmp_wav = f.name
+            with wave.open(tmp_wav, "wb") as wf:
+                wf.setnchannels(self.CHANNELS)
+                wf.setsampwidth(2)  # int16
+                wf.setframerate(self.RATE)
+                wf.writeframes(b"".join(frames))
+
+            recognizer = sr.Recognizer()
+            with sr.AudioFile(tmp_wav) as source:
+                audio_data = recognizer.record(source)
             text = recognizer.recognize_google(audio_data, language="ja-JP")
         except sr.UnknownValueError:
-            text = "（音声を認識できませんでした）"
+            text = ""  # 認識失敗 → WAV フォールバック
         except Exception as e:
             text = f"（認識エラー: {e}）"
+        finally:
+            if tmp_wav:
+                try:
+                    os.unlink(tmp_wav)
+                except Exception:
+                    pass
 
         os.makedirs(self._save_dir, exist_ok=True)
         ts = start_time.strftime("%Y%m%d_%H%M%S")
         game = _safe_filename(self._game_title) if self._game_title else "unknown"
-        path = os.path.join(self._save_dir, f"VoiceMemo_{game}_{ts}.txt")
         ss_ref = f"スクリーンショット/Screenshot_{game}_{ts}.png"
+
+        # 認識失敗時は WAV ファイルをフォールバック保存
+        wav_ref = ""
+        if not text:
+            wav_path = os.path.join(self._save_dir, f"VoiceMemo_{game}_{ts}.wav")
+            with wave.open(wav_path, "wb") as wf:
+                wf.setnchannels(self.CHANNELS)
+                wf.setsampwidth(2)
+                wf.setframerate(self.RATE)
+                wf.writeframes(b"".join(frames))
+            text = "（音声を認識できませんでした）"
+            wav_ref = f"VoiceMemo_{game}_{ts}.wav"
+
+        path = os.path.join(self._save_dir, f"VoiceMemo_{game}_{ts}.txt")
         with open(path, "w", encoding="utf-8") as f:
-            f.write(f"# ボイスメモ\n")
+            f.write("# ボイスメモ\n")
             f.write(f"ゲーム         : {self._game_title or '全画面'}\n")
             f.write(f"開始           : {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"終了           : {end_time.strftime('%Y-%m-%d %H:%M:%S')} (+{elapsed})\n")
-            f.write(f"スクリーンショット: {ss_ref}\n\n")
-            f.write(text + "\n")
+            f.write(f"スクリーンショット: {ss_ref}\n")
+            if wav_ref:
+                f.write(f"音声ファイル   : {wav_ref}\n")
+            f.write(f"\n{text}\n")
         return path
 
 
