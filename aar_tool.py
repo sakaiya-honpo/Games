@@ -194,8 +194,9 @@ class AARToolApp:
         self._ocr_ready = False
 
         self._build_ui()
-        # 起動直後にバックグラウンドでOCRエンジンを初期化
+        # 起動直後にバックグラウンドでOCRエンジン初期化＋Ollamaモデル一覧取得
         threading.Thread(target=self._init_ocr, daemon=True).start()
+        threading.Thread(target=self._load_ollama_models, daemon=True).start()
 
     # ------------------------------------------------------------------
     # UI構築
@@ -208,7 +209,9 @@ class AARToolApp:
         cfg_frame.pack(fill="x", **pad)
 
         ttk.Label(cfg_frame, text="Ollamaモデル:").grid(row=0, column=0, sticky="w", **pad)
-        ttk.Entry(cfg_frame, textvariable=self.model_name, width=24).grid(row=0, column=1, sticky="w", **pad)
+        self.model_combo = ttk.Combobox(cfg_frame, textvariable=self.model_name, width=30, state="normal")
+        self.model_combo.grid(row=0, column=1, sticky="w", **pad)
+        ttk.Button(cfg_frame, text="↻", width=3, command=lambda: threading.Thread(target=self._load_ollama_models, daemon=True).start()).grid(row=0, column=2, **pad)
 
         ttk.Label(cfg_frame, text="保存先フォルダ:").grid(row=1, column=0, sticky="w", **pad)
         ttk.Entry(cfg_frame, textvariable=self.save_dir, width=40).grid(row=1, column=1, sticky="ew", **pad)
@@ -237,6 +240,23 @@ class AARToolApp:
         # 進捗バー（AAR生成中に表示）
         self.progress = ttk.Progressbar(self.root, mode="indeterminate")
         self.progress.pack(fill="x", padx=8, pady=2)
+
+    # ------------------------------------------------------------------
+    # Ollamaモデル一覧取得
+    # ------------------------------------------------------------------
+    def _load_ollama_models(self):
+        try:
+            result = ollama.list()
+            models = [m.model for m in result.models]
+            if not models:
+                return
+            def _update():
+                self.model_combo["values"] = models
+                if self.model_name.get() not in models:
+                    self.model_name.set(models[0])
+            self.root.after(0, _update)
+        except Exception:
+            pass  # Ollama未起動時はプルダウンを空のままにする
 
     # ------------------------------------------------------------------
     # OCRエンジン初期化（起動時バックグラウンド）
