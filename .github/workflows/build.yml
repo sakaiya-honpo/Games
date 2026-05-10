@@ -23,7 +23,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $dist = "dist\AARTool"
+          $dist = "dist\PlayMemoMaker"
           New-Item -ItemType Directory -Path $dist -Force | Out-Null
 
           # ---------------------------------------------------------------
@@ -54,18 +54,14 @@ jobs:
           # ---------------------------------------------------------------
           # 4. tkinter サポートファイルを Python インストール先からコピー
           # ---------------------------------------------------------------
-          # embeddable Python には tkinter が含まれないため全ファイルを手動コピー
           $pyDir  = Split-Path (Get-Command python).Path
           $dlls   = "$pyDir\DLLs"
-          # C拡張 と TCL/TK DLL
           foreach ($f in @("_tkinter.pyd","tcl86t.dll","tk86t.dll","zlib1.dll")) {
             if (Test-Path "$dlls\$f") { Copy-Item "$dlls\$f" $dist }
           }
-          # TCL/TK ランタイムデータ
           if (Test-Path "$pyDir\tcl") {
             Copy-Item "$pyDir\tcl" "$dist\tcl" -Recurse -Force
           }
-          # tkinter Python パッケージ本体（embeddable には含まれないため必須）
           if (Test-Path "$pyDir\Lib\tkinter") {
             Copy-Item "$pyDir\Lib\tkinter" "$pkgs\tkinter" -Recurse -Force
           }
@@ -73,8 +69,6 @@ jobs:
           # ---------------------------------------------------------------
           # 5. OCR ヘルパー（.NET Framework 4.8 exe）をビルドして同梱
           # ---------------------------------------------------------------
-          # PowerShell から WinRT async を呼ぶのは困難なため C# exe を使う。
-          # .NET Framework 4.8 は Windows 10/11 に標準搭載なので追加インストール不要。
           dotnet publish ocr_helper\ocr_helper.csproj -c Release -o "$dist\_ocr_tmp"
           Copy-Item "$dist\_ocr_tmp\ocr_helper.exe" "$dist\"
           Remove-Item "$dist\_ocr_tmp" -Recurse -Force
@@ -85,19 +79,33 @@ jobs:
           Copy-Item aar_tool.py $dist\
 
           # ---------------------------------------------------------------
-          # 6. ランチャー作成
+          # 7. アイコン生成（Pillow）→ ランチャー exe ビルド
           # ---------------------------------------------------------------
-          # TCL_LIBRARY / TK_LIBRARY を明示指定しないと embeddable Python では
-          # tkinter が tcl/tk ライブラリを見つけられず無音クラッシュする。
-          # pythonw.exe はコンソールなし起動。start /B で即座にバッチを終了。
-          $bat = '@echo off' + "`r`n" +
-                 'set TCL_LIBRARY=%~dp0tcl\tcl8.6' + "`r`n" +
-                 'set TK_LIBRARY=%~dp0tcl\tk8.6' + "`r`n" +
-                 'cd /d "%~dp0"' + "`r`n" +
-                 'start /B "" "%~dp0pythonw.exe" "%~dp0aar_tool.py"'
-          Set-Content "$dist\AARTool.bat" $bat -Encoding ASCII
+          # 緑のプレイボタンアイコンを Pillow で生成して launcher/ に配置
+          $iconScript = @'
+from PIL import Image, ImageDraw
+sizes = [256, 64, 48, 32, 16]
+imgs = []
+for sz in sizes:
+    img = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    p = max(1, sz // 8)
+    d.rounded_rectangle([p, p, sz-p-1, sz-p-1], radius=sz//5, fill=(46, 160, 100, 255))
+    m = sz // 4
+    pts = [(m + sz//10, m), (m + sz//10, sz-m), (sz-m, sz//2)]
+    d.polygon(pts, fill=(255, 255, 255, 230))
+    imgs.append(img)
+imgs[0].save(r"launcher\icon.ico", format="ICO", append_images=imgs[1:])
+'@
+          python -c $iconScript
 
-          # debug.bat: コンソール付き python.exe で起動しエラーを画面に表示
+          dotnet publish launcher\launcher.csproj -c Release -o "$dist\_launcher_tmp"
+          Copy-Item "$dist\_launcher_tmp\PlayMemoMaker.exe" "$dist\"
+          Remove-Item "$dist\_launcher_tmp" -Recurse -Force
+
+          # ---------------------------------------------------------------
+          # 8. debug.bat（コンソール付き起動 / トラブルシュート用）
+          # ---------------------------------------------------------------
           $dbg = '@echo off' + "`r`n" +
                  'set TCL_LIBRARY=%~dp0tcl\tcl8.6' + "`r`n" +
                  'set TK_LIBRARY=%~dp0tcl\tk8.6' + "`r`n" +
@@ -109,6 +117,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AARTool-Windows
-          path: dist\AARTool\
+          name: PlayMemoMaker-Windows
+          path: dist\PlayMemoMaker\
           retention-days: 30
