@@ -16,25 +16,37 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_sub
 # --------------------------------------------------------------------------
 # paddlepaddle / paddleocr は内部モジュールが多いため collect_all で一括収集
 # --------------------------------------------------------------------------
-paddle_datas, paddle_binaries, paddle_hiddenimports = collect_all('paddle')
-paddleocr_datas, paddleocr_binaries, paddleocr_hiddenimports = collect_all('paddleocr')
-
-# pyclipper は paddleocr の依存で動的ロードされる
-pyclipper_datas, pyclipper_binaries, pyclipper_hiddenimports = collect_all('pyclipper')
+paddle_datas,     paddle_binaries,     paddle_hiddenimports     = collect_all('paddle')
+paddleocr_datas,  paddleocr_binaries,  paddleocr_hiddenimports  = collect_all('paddleocr')
+pyclipper_datas,  pyclipper_binaries,  pyclipper_hiddenimports  = collect_all('pyclipper')
 pygetwindow_datas, pygetwindow_binaries, pygetwindow_hiddenimports = collect_all('pygetwindow')
 
-# Cython は paddle の依存として引き込まれるが .cpp 等のデータファイルが必要
+# Cython: paddle 依存で Compiler モジュールが実行時にロードされるためデータファイルが必要
 cython_datas = collect_data_files('Cython')
 
-all_datas    = paddle_datas + paddleocr_datas + pyclipper_datas + pygetwindow_datas + cython_datas
-all_binaries = paddle_binaries + paddleocr_binaries + pyclipper_binaries + pygetwindow_binaries
-all_hidden   = (
+# OpenCV: cascade ファイル等のデータファイル
+cv2_datas = collect_data_files('cv2')
+
+all_datas = (
+    paddle_datas
+    + paddleocr_datas
+    + pyclipper_datas
+    + pygetwindow_datas
+    + cython_datas
+    + cv2_datas
+)
+all_binaries = (
+    paddle_binaries
+    + paddleocr_binaries
+    + pyclipper_binaries
+    + pygetwindow_binaries
+)
+all_hidden = (
     paddle_hiddenimports
     + paddleocr_hiddenimports
     + pyclipper_hiddenimports
     + pygetwindow_hiddenimports
     + collect_submodules('skimage')
-    + collect_submodules('scipy')
     + collect_submodules('cv2')
     + [
         'PIL._tkinter_finder',
@@ -48,6 +60,9 @@ all_hidden   = (
         'yaml',
         'six',
         'cachetools',
+        'scipy.special._ufuncs',
+        'scipy.linalg.blas',
+        'Cython',
     ]
 )
 
@@ -62,11 +77,8 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[
-        'matplotlib',
-        'jupyter',
-        'IPython',
-    ],
+    # UPX 圧縮が原因のエラーを避けるため excludes は最小限に
+    excludes=['matplotlib', 'jupyter', 'IPython'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -84,23 +96,23 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
-    console=False,          # コンソールウィンドウを非表示
+    upx=False,              # UPX 無効: DLL 破損・誤検知・起動失敗を防ぐ
+    console=False,
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,              # アイコンを用意する場合は 'aar_tool.ico' を指定
+    icon=None,
 )
 
-# onedir モード（単一フォルダに展開）: paddle の大量DLLを扱いやすくするため
+# onedir モード: paddle の大量 DLL を扱いやすくするため
 coll = COLLECT(
     exe,
     a.binaries,
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,              # UPX 無効
     upx_exclude=[],
     name='AARTool',
 )
