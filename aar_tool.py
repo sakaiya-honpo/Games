@@ -1,10 +1,11 @@
 """
 ゲームプレイ自動記録・AAR生成ツール
 
-バックグラウンドでスクリーンキャプチャ＋OCRを行い、
+バックグラウンドでスクリーンキャプチャ＋Windows OCR（WinRT）を行い、
 セッション終了後にOllama経由のローカルLLMでAAR/プレイメモを生成する。
 """
 
+import asyncio
 import threading
 import difflib
 import datetime
@@ -16,7 +17,7 @@ from tkinter import ttk, scrolledtext, filedialog, messagebox
 
 import pyautogui
 import pygetwindow as gw
-from paddleocr import PaddleOCR
+import winocr
 import ollama
 
 # PyInstaller の onedir ビルドでは実行ファイルのディレクトリを基準にする
@@ -31,7 +32,7 @@ os.makedirs(_SAVE_DIR, exist_ok=True)
 # ---------------------------------------------------------------------------
 CAPTURE_INTERVAL = 10          # キャプチャ間隔（秒）
 SIMILARITY_THRESHOLD = 0.95    # これ以上類似していれば破棄
-OCR_LANG = "japan"             # PaddleOCR言語設定
+OCR_LANG = "ja"               # Windows OCR 言語コード
 DEFAULT_MODEL = "qwen2.5:7b"   # Ollamaモデル名
 SAVE_OCR_LOG = False           # 中間OCRログを保存するか（デバッグ用）
 OCR_LOG_PATH = os.path.join(_SAVE_DIR, "ocr_log.txt")
@@ -58,7 +59,7 @@ AAR_PROMPT_TEMPLATE = """\
 （うまくいった戦略・判断を具体的に挙げる）
 
 ## 改善点（Improve）
-（次回に改善すべき点・失敗した判断を具体的に挖げる）
+（次回に改善すべき点・失敗した判断を具体的に挙げる）
 
 ## 次回への教訓
 （今後のプレイに活かせる学びをまとめる）
@@ -66,24 +67,18 @@ AAR_PROMPT_TEMPLATE = """\
 
 
 # ---------------------------------------------------------------------------
-# OCRエンジン（シングルトン、初期化は初回のみ）
+# Windows OCR ユーティリティ
 # ---------------------------------------------------------------------------
-_ocr_engine: PaddleOCR | None = None
-_ocr_lock = threading.Lock()
+def ocr_image(pil_image) -> str:
+    result = asyncio.run(winocr.recognize_pil(pil_image, OCR_LANG))
+    return result.text if result else ""
 
 
-def get_ocr_engine() -> PaddleOCR:
-    global _ocr_engine
-    with _ocr_lock:
-        if _ocr_engine is None:
-            _ocr_engine = PaddleOCR(use_angle_cls=True, lang=OCR_LANG, show_log=False)
-    return _ocr_engine
-
-
-def reset_ocr_engine():
-    global _ocr_engine
-    with _ocr_lock:
-        _ocr_engine = None
+def check_ocr_available() -> None:
+    """起動時チェック: 日本語 OCR が使用可能か確認。失敗時は例外を送出。"""
+    from PIL import Image
+    test_img = Image.new("RGB", (10, 10), color=(255, 255, 255))
+    asyncio.run(winocr.recognize_pil(test_img, OCR_LANG))
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +87,7 @@ def reset_ocr_engine():
 def get_window_titles() -> list[str]:
     try:
         titles = [t for t in gw.getAllTitles() if t.strip()]
-        seen = set()
+        seen: set[str] = set()
         unique = []
         for t in titles:
             if t not in seen:
@@ -145,21 +140,11 @@ class CaptureWorker:
             return "\n".join(self.log_lines)
 
     def _run(self):
-        import numpy as np
-        ocr = get_ocr_engine()
         while not self._stop_event.is_set():
             try:
                 region = get_window_region(self._window_title)
                 screenshot = pyautogui.screenshot(region=region)
-                img_array = np.array(screenshot)
-
-                result = ocr.ocr(img_array, cls=True)
-                texts = []
-                if result and result[0]:
-                    for line in result[0]:
-                        if line and len(line) >= 2 and line[1]:
-                            texts.append(line[1][0])
-                current_text = "\n".join(texts)
+                current_text = ocr_image(screenshot)
 
                 if self._is_new_content(current_text):
                     timestamp = datetime.datetime.now().strftime("%H:%M:%S")
@@ -231,12 +216,11 @@ class AARToolApp:
         self.save_dir = tk.StringVar(value=_SAVE_DIR)
         self.model_name = tk.StringVar(value=DEFAULT_MODEL)
         self.window_title = tk.StringVar(value=WINDOW_ALL)
-        self.status = tk.StringVar(value="OCRエンジン初期化中...")
+        self.status = tk.StringVar(value="OCR確認中...")
         self.is_running = False
-        self._ocr_ready = False
 
         self._build_ui()
-        threading.Thread(target=self._init_ocr, daemon=True).start()
+        threading.Thread(target=self._check_ocr, daemon=True).start()
         threading.Thread(target=self._load_ollama_models, daemon=True).start()
 
     # ------------------------------------------------------------------
@@ -248,7 +232,6 @@ class AARToolApp:
         cfg_frame = ttk.LabelFrame(self.root, text="設定")
         cfg_frame.pack(fill="x", **pad)
 
-        # Ollamaモデル
         ttk.Label(cfg_frame, text="Ollamaモデル:").grid(row=0, column=0, sticky="w", **pad)
         self.model_combo = ttk.Combobox(cfg_frame, textvariable=self.model_name, width=30)
         self.model_combo.grid(row=0, column=1, sticky="w", **pad)
@@ -256,22 +239,18 @@ class AARToolApp:
                    command=lambda: threading.Thread(target=self._load_ollama_models, daemon=True).start()
                    ).grid(row=0, column=2, **pad)
 
-        # キャプチャ対象ウィンドウ
         ttk.Label(cfg_frame, text="キャプチャ対象:").grid(row=1, column=0, sticky="w", **pad)
         self.window_combo = ttk.Combobox(cfg_frame, textvariable=self.window_title, width=30)
         self.window_combo["values"] = get_window_titles()
         self.window_combo.grid(row=1, column=1, sticky="w", **pad)
         ttk.Button(cfg_frame, text="↻", width=3,
-                   command=self._refresh_windows
-                   ).grid(row=1, column=2, **pad)
+                   command=self._refresh_windows).grid(row=1, column=2, **pad)
 
-        # 保存先
         ttk.Label(cfg_frame, text="保存先フォルダ:").grid(row=2, column=0, sticky="w", **pad)
         ttk.Entry(cfg_frame, textvariable=self.save_dir, width=40).grid(row=2, column=1, sticky="ew", **pad)
         ttk.Button(cfg_frame, text="参照...", command=self._browse_dir).grid(row=2, column=2, **pad)
         cfg_frame.columnconfigure(1, weight=1)
 
-        # コントロールフレーム
         ctrl_frame = ttk.Frame(self.root)
         ctrl_frame.pack(fill="x", **pad)
 
@@ -283,13 +262,8 @@ class AARToolApp:
                                    width=24, state="disabled")
         self.stop_btn.pack(side="left", padx=4)
 
-        # OCR初期化失敗時の再試行ボタン（通常は非表示）
-        self.retry_btn = ttk.Button(ctrl_frame, text="OCR 再試行", command=self._retry_ocr,
-                                    width=12)
-
         ttk.Label(ctrl_frame, textvariable=self.status, foreground="gray").pack(side="left", padx=12)
 
-        # ログエリア
         log_frame = ttk.LabelFrame(self.root, text="キャプチャログ（差分のみ）")
         log_frame.pack(fill="both", expand=True, **pad)
 
@@ -299,6 +273,34 @@ class AARToolApp:
 
         self.progress = ttk.Progressbar(self.root, mode="indeterminate")
         self.progress.pack(fill="x", padx=8, pady=2)
+
+    # ------------------------------------------------------------------
+    # Windows OCR 起動時確認
+    # ------------------------------------------------------------------
+    def _check_ocr(self):
+        self.root.after(0, self.progress.start)
+        try:
+            check_ocr_available()
+            self.root.after(0, lambda: self.status.set("停止中"))
+            self.root.after(0, lambda: self.start_btn.config(state="normal"))
+        except Exception as e:
+            tb = traceback.format_exc()
+            log_path = os.path.join(_SAVE_DIR, "ocr_error.log")
+            try:
+                with open(log_path, "a", encoding="utf-8") as f:
+                    f.write(f"\n[{datetime.datetime.now()}]\n{tb}\n")
+            except Exception:
+                pass
+            msg = (
+                "Windows OCR（日本語）が使用できません。\n\n"
+                f"エラー: {e}\n\n"
+                "Windowsの設定 → 時刻と言語 → 言語 →\n"
+                "「日本語」の言語パックがインストールされているか確認してください。"
+            )
+            self.root.after(0, lambda: self.status.set("OCR利用不可"))
+            self.root.after(0, lambda: messagebox.showerror("OCRエラー", msg))
+        finally:
+            self.root.after(0, self.progress.stop)
 
     # ------------------------------------------------------------------
     # Ollamaモデル一覧取得
@@ -325,44 +327,6 @@ class AARToolApp:
         self.window_combo["values"] = titles
         if self.window_title.get() not in titles:
             self.window_title.set(WINDOW_ALL)
-
-    # ------------------------------------------------------------------
-    # OCRエンジン初期化
-    # ------------------------------------------------------------------
-    def _init_ocr(self):
-        self.root.after(0, self.progress.start)
-        self.root.after(0, lambda: self.status.set("OCRエンジン初期化中（初回はモデルDL約400MB）..."))
-        try:
-            get_ocr_engine()
-            self._ocr_ready = True
-            self.root.after(0, lambda: self.status.set("停止中"))
-            self.root.after(0, lambda: self.start_btn.config(state="normal"))
-            self.root.after(0, lambda: self.retry_btn.pack_forget())
-        except Exception as e:
-            tb = traceback.format_exc()
-            log_path = os.path.join(_SAVE_DIR, "ocr_error.log")
-            try:
-                with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(f"\n[{datetime.datetime.now()}]\n{tb}\n")
-            except Exception:
-                pass
-            msg = (
-                f"OCRエンジンの初期化に失敗しました。\n\n"
-                f"エラー: {e}\n\n"
-                f"詳細ログ: {log_path}\n\n"
-                f"初回起動時はインターネット接続が必要です（モデルDL約400MB）。\n"
-                f"接続を確認して「OCR 再試行」ボタンを押してください。"
-            )
-            self.root.after(0, lambda: self.status.set("OCR初期化失敗 — 再試行してください"))
-            self.root.after(0, lambda: self.retry_btn.pack(side="left", padx=4))
-            self.root.after(0, lambda: messagebox.showerror("OCR初期化エラー", msg))
-        finally:
-            self.root.after(0, self.progress.stop)
-
-    def _retry_ocr(self):
-        reset_ocr_engine()
-        self.retry_btn.pack_forget()
-        threading.Thread(target=self._init_ocr, daemon=True).start()
 
     # ------------------------------------------------------------------
     # イベントハンドラ
