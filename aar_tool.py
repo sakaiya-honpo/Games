@@ -116,15 +116,18 @@ function Await($t) {
 [void][Windows.Media.Ocr.OcrEngine,Windows.Foundation,ContentType=WindowsRuntime]
 [void][Windows.Graphics.Imaging.BitmapDecoder,Windows.Foundation,ContentType=WindowsRuntime]
 [void][Windows.Globalization.Language,Windows.Foundation,ContentType=WindowsRuntime]
+[void][Windows.Storage.StorageFile,Windows.Foundation,ContentType=WindowsRuntime]
+[void][Windows.Storage.FileAccessMode,Windows.Foundation,ContentType=WindowsRuntime]
 $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage(
     [Windows.Globalization.Language]::new($env:OCR_LANG))
 if (-not $engine) { Write-Error 'OCR engine unavailable'; exit 1 }
-$stream = [System.IO.File]::OpenRead($env:IMG_PATH)
+$file   = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($env:IMG_PATH))
+$stream = Await ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read))
 try {
     $dec = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream))
     $bmp = Await ($dec.GetSoftwareBitmapAsync())
     (Await ($engine.RecognizeAsync($bmp))).Text
-} finally { $stream.Close() }
+} finally { $stream.Dispose() }
 """
 
 
