@@ -54,13 +54,20 @@ jobs:
           # ---------------------------------------------------------------
           # 4. tkinter サポートファイルを Python インストール先からコピー
           # ---------------------------------------------------------------
+          # embeddable Python には tkinter が含まれないため全ファイルを手動コピー
           $pyDir  = Split-Path (Get-Command python).Path
           $dlls   = "$pyDir\DLLs"
+          # C拡張 と TCL/TK DLL
           foreach ($f in @("_tkinter.pyd","tcl86t.dll","tk86t.dll","zlib1.dll")) {
             if (Test-Path "$dlls\$f") { Copy-Item "$dlls\$f" $dist }
           }
+          # TCL/TK ランタイムデータ
           if (Test-Path "$pyDir\tcl") {
             Copy-Item "$pyDir\tcl" "$dist\tcl" -Recurse -Force
+          }
+          # tkinter Python パッケージ本体（embeddable には含まれないため必須）
+          if (Test-Path "$pyDir\Lib\tkinter") {
+            Copy-Item "$pyDir\Lib\tkinter" "$pkgs\tkinter" -Recurse -Force
           }
 
           # ---------------------------------------------------------------
