@@ -69,7 +69,6 @@ jobs:
           # ---------------------------------------------------------------
           # 5. OCR ヘルパー（.NET Framework 4.8 exe）をビルドして同梱
           # ---------------------------------------------------------------
-          dotnet --version
           dotnet publish ocr_helper\ocr_helper.csproj -c Release -o "$dist\_ocr_tmp"
           Copy-Item "$dist\_ocr_tmp\ocr_helper.exe" "$dist\"
           Remove-Item "$dist\_ocr_tmp" -Recurse -Force
@@ -80,19 +79,15 @@ jobs:
           Copy-Item aar_tool.py $dist\
 
           # ---------------------------------------------------------------
-          # 7. アイコン生成（Pillow）→ ランチャー exe ビルド
+          # 7. 起動用 bat を生成
           # ---------------------------------------------------------------
-          # アイコン生成はシステム Python で実行するため別途インストール
-          pip install Pillow --quiet
-          python generate_icon.py
+          $launcher = '@echo off' + "`r`n" +
+                      'set TCL_LIBRARY=%~dp0tcl\tcl8.6' + "`r`n" +
+                      'set TK_LIBRARY=%~dp0tcl\tk8.6' + "`r`n" +
+                      'cd /d "%~dp0"' + "`r`n" +
+                      'start /B "" "%~dp0pythonw.exe" "%~dp0aar_tool.py"'
+          Set-Content "$dist\PlayMemoMaker.bat" $launcher -Encoding ASCII
 
-          dotnet publish launcher\launcher.csproj -c Release -o "$dist\_launcher_tmp"
-          Copy-Item "$dist\_launcher_tmp\PlayMemoMaker.exe" "$dist\"
-          Remove-Item "$dist\_launcher_tmp" -Recurse -Force
-
-          # ---------------------------------------------------------------
-          # 8. debug.bat（コンソール付き起動 / トラブルシュート用）
-          # ---------------------------------------------------------------
           $dbg = '@echo off' + "`r`n" +
                  'set TCL_LIBRARY=%~dp0tcl\tcl8.6' + "`r`n" +
                  'set TK_LIBRARY=%~dp0tcl\tk8.6' + "`r`n" +
