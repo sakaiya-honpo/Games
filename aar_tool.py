@@ -6,7 +6,6 @@
 """
 
 import threading
-import time
 import difflib
 import datetime
 import os
@@ -18,6 +17,9 @@ import pyautogui
 from paddleocr import PaddleOCR
 import ollama
 
+# PyInstaller の onedir ビルドでは実行ファイルのディレクトリを基準にする
+_BASE_DIR = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
+
 # ---------------------------------------------------------------------------
 # 設定
 # ---------------------------------------------------------------------------
@@ -26,6 +28,7 @@ SIMILARITY_THRESHOLD = 0.95    # これ以上類似していれば破棄
 OCR_LANG = "japan"             # PaddleOCR言語設定
 DEFAULT_MODEL = "qwen2.5:7b"   # Ollamaモデル名
 SAVE_OCR_LOG = False           # 中間OCRログを保存するか（デバッグ用）
+OCR_LOG_PATH = os.path.join(_BASE_DIR, "ocr_log.txt")
 
 AAR_PROMPT_TEMPLATE = """\
 以下はゲームプレイ中に画面テキストを定期的にOCRで読み取り、差分のみを時系列順に記録したプレイログです。
@@ -142,8 +145,7 @@ class CaptureWorker:
         return True
 
     def _save_ocr_log(self, entry: str):
-        log_path = "ocr_log.txt"
-        with open(log_path, "a", encoding="utf-8") as f:
+        with open(OCR_LOG_PATH, "a", encoding="utf-8") as f:
             f.write(entry + "\n\n")
 
 
@@ -159,7 +161,9 @@ def generate_aar(log_text: str, model: str = DEFAULT_MODEL) -> str:
     return response["message"]["content"]
 
 
-def save_aar(aar_text: str, save_dir: str = ".") -> str:
+def save_aar(aar_text: str, save_dir: str | None = None) -> str:
+    if save_dir is None:
+        save_dir = _BASE_DIR
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"AAR_{timestamp}.md"
     filepath = os.path.join(save_dir, filename)
@@ -178,12 +182,15 @@ class AARToolApp:
         self.root.resizable(True, True)
 
         self.worker: CaptureWorker | None = None
-        self.save_dir = tk.StringVar(value=os.getcwd())
+        self.save_dir = tk.StringVar(value=_BASE_DIR)
         self.model_name = tk.StringVar(value=DEFAULT_MODEL)
-        self.status = tk.StringVar(value="停止中")
+        self.status = tk.StringVar(value="OCRエンジン初期化中...")
         self.is_running = False
+        self._ocr_ready = False
 
         self._build_ui()
+        # 起動直後にバックグラウンドでOCRエンジンを初期化
+        threading.Thread(target=self._init_ocr, daemon=True).start()
 
     # ------------------------------------------------------------------
     # UI構築
@@ -207,7 +214,7 @@ class AARToolApp:
         ctrl_frame = ttk.Frame(self.root)
         ctrl_frame.pack(fill="x", **pad)
 
-        self.start_btn = ttk.Button(ctrl_frame, text="▶ 記録開始", command=self.start_recording, width=16)
+        self.start_btn = ttk.Button(ctrl_frame, text="▶ 記録開始", command=self.start_recording, width=16, state="disabled")
         self.start_btn.pack(side="left", padx=4)
 
         self.stop_btn = ttk.Button(ctrl_frame, text="■ 記録停止 & AAR生成", command=self.stop_recording, width=24, state="disabled")
@@ -225,6 +232,23 @@ class AARToolApp:
         # 進捗バー（AAR生成中に表示）
         self.progress = ttk.Progressbar(self.root, mode="indeterminate")
         self.progress.pack(fill="x", padx=8, pady=2)
+
+    # ------------------------------------------------------------------
+    # OCRエンジン初期化（起動時バックグラウンド）
+    # ------------------------------------------------------------------
+    def _init_ocr(self):
+        self.root.after(0, self.progress.start)
+        try:
+            get_ocr_engine()
+            self._ocr_ready = True
+            self.root.after(0, lambda: self.status.set("停止中"))
+            self.root.after(0, lambda: self.start_btn.config(state="normal"))
+        except Exception as e:
+            self.root.after(0, lambda: self.status.set("OCR初期化失敗"))
+            self.root.after(0, lambda: messagebox.showerror(
+                "初期化エラー", f"OCRエンジンの初期化に失敗しました:\n{e}"))
+        finally:
+            self.root.after(0, self.progress.stop)
 
     # ------------------------------------------------------------------
     # イベントハンドラ
@@ -280,7 +304,7 @@ class AARToolApp:
 
             try:
                 aar_text = generate_aar(log_text, model=self.model_name.get())
-                filepath = save_aar(aar_text, save_dir=self.save_dir.get())
+                filepath = save_aar(aar_text, save_dir=self.save_dir.get() or _BASE_DIR)
                 self.root.after(0, lambda: messagebox.showinfo(
                     "完了", f"AARを保存しました:\n{filepath}"))
             except Exception as e:
