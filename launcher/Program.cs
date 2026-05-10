@@ -1,10 +1,13 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Windows.Forms;
+using System.Runtime.InteropServices;
 
 class Launcher
 {
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern int MessageBox(IntPtr hWnd, string text, string caption, uint type);
+
     [STAThread]
     static void Main()
     {
@@ -27,11 +30,10 @@ class Launcher
         }
         catch (Exception ex)
         {
-            MessageBox.Show(
+            MessageBox(IntPtr.Zero,
                 $"起動に失敗しました:\n{ex.Message}",
                 "プレイメモメーカー",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
+                0x10u); // MB_ICONERROR
         }
     }
 }
