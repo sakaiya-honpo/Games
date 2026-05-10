@@ -31,7 +31,7 @@ jobs:
           # ---------------------------------------------------------------
           $pkgs = "$dist\Lib\site-packages"
           New-Item -ItemType Directory -Path $pkgs -Force | Out-Null
-          pip install pyautogui pygetwindow winocr ollama Pillow `
+          pip install pyautogui pygetwindow ollama Pillow `
             --target $pkgs --no-warn-script-location
 
           # ---------------------------------------------------------------
@@ -69,16 +69,26 @@ jobs:
           Copy-Item aar_tool.py $dist\
 
           # ---------------------------------------------------------------
-          # 6. ランチャー作成（コンソールなし・エラーログ付き）
+          # 6. ランチャー作成
           # ---------------------------------------------------------------
           # TCL_LIBRARY / TK_LIBRARY を明示指定しないと embeddable Python では
-          # tkinter が tcl/tk ライブラリを見つけられず無音クラッシュする
+          # tkinter が tcl/tk ライブラリを見つけられず無音クラッシュする。
+          # pythonw.exe はコンソールなし起動。start /B で即座にバッチを終了。
           $bat = '@echo off' + "`r`n" +
                  'set TCL_LIBRARY=%~dp0tcl\tcl8.6' + "`r`n" +
                  'set TK_LIBRARY=%~dp0tcl\tk8.6' + "`r`n" +
                  'cd /d "%~dp0"' + "`r`n" +
-                 'start "" "%~dp0pythonw.exe" "%~dp0aar_tool.py" 2>>"%~dp0error.log"'
+                 'start /B "" "%~dp0pythonw.exe" "%~dp0aar_tool.py"'
           Set-Content "$dist\AARTool.bat" $bat -Encoding ASCII
+
+          # debug.bat: コンソール付き python.exe で起動しエラーを画面に表示
+          $dbg = '@echo off' + "`r`n" +
+                 'set TCL_LIBRARY=%~dp0tcl\tcl8.6' + "`r`n" +
+                 'set TK_LIBRARY=%~dp0tcl\tk8.6' + "`r`n" +
+                 'cd /d "%~dp0"' + "`r`n" +
+                 '"%~dp0python.exe" "%~dp0aar_tool.py"' + "`r`n" +
+                 'pause'
+          Set-Content "$dist\debug.bat" $dbg -Encoding ASCII
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
