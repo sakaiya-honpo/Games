@@ -76,7 +76,7 @@ def get_ocr_engine() -> PaddleOCR:
     global _ocr_engine
     with _ocr_lock:
         if _ocr_engine is None:
-            _ocr_engine = PaddleOCR(use_angle_cls=True, lang=OCR_LANG, show_log=False)
+            _ocr_engine = PaddleOCR(use_angle_cls=True, lang=OCR_LANG)
     return _ocr_engine
 
 
