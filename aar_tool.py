@@ -5,27 +5,56 @@
 セッション終了後にOllama経由のローカルLLMでAAR/プレイメモを生成する。
 """
 
-import asyncio
-import threading
-import difflib
-import datetime
 import os
 import sys
-import traceback
-import tkinter as tk
-from tkinter import ttk, scrolledtext, filedialog, messagebox
-
-import pyautogui
-import pygetwindow as gw
-import winocr
-import ollama
+import datetime
 
 # PyInstaller の onedir ビルドでは実行ファイルのディレクトリを基準にする
 _BASE_DIR = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
 
 # AAR・ログの保存先: デスクトップ上の専用フォルダ
 _SAVE_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "ゲームAAR")
-os.makedirs(_SAVE_DIR, exist_ok=True)
+
+
+def _write_error_log(msg: str) -> None:
+    log_path = os.path.join(_BASE_DIR, "error.log")
+    try:
+        with open(log_path, "a", encoding="utf-8") as _f:
+            _f.write(f"\n[{datetime.datetime.now()}]\n{msg}\n")
+    except Exception:
+        pass
+
+
+try:
+    import asyncio
+    import threading
+    import difflib
+    import traceback
+    import tkinter as tk
+    from tkinter import ttk, scrolledtext, filedialog, messagebox
+    import pyautogui
+    import pygetwindow as gw
+    import winocr
+    import ollama
+    os.makedirs(_SAVE_DIR, exist_ok=True)
+except Exception as _e:
+    import traceback as _tb
+    _write_error_log(_tb.format_exc())
+    # tkinter だけは別途試みてエラーダイアログを表示
+    try:
+        import tkinter as _tk
+        from tkinter import messagebox as _mb
+        _root = _tk.Tk()
+        _root.withdraw()
+        _mb.showerror(
+            "起動エラー",
+            f"モジュールの読み込みに失敗しました。\n"
+            f"以下のファイルを確認してください:\n{os.path.join(_BASE_DIR, 'error.log')}\n\n"
+            f"エラー: {_e}"
+        )
+    except Exception:
+        pass
+    sys.exit(1)
 
 # ---------------------------------------------------------------------------
 # 設定
