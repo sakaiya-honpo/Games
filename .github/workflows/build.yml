@@ -69,6 +69,7 @@ jobs:
           # ---------------------------------------------------------------
           # 5. OCR ヘルパー（.NET Framework 4.8 exe）をビルドして同梱
           # ---------------------------------------------------------------
+          dotnet --version
           dotnet publish ocr_helper\ocr_helper.csproj -c Release -o "$dist\_ocr_tmp"
           Copy-Item "$dist\_ocr_tmp\ocr_helper.exe" "$dist\"
           Remove-Item "$dist\_ocr_tmp" -Recurse -Force

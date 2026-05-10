@@ -6,6 +6,5 @@
     <AssemblyName>PlayMemoMaker</AssemblyName>
     <AssemblyTitle>プレイメモメーカー</AssemblyTitle>
     <ApplicationIcon>icon.ico</ApplicationIcon>
-    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 </Project>
