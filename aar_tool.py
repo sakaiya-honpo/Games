@@ -739,8 +739,10 @@ class AARToolApp:
         self._voice_memo_paths: list[str] = []
         self._custom_prompt_path: str | None = None
         self._hotkey_listener = VoiceHotkeyListener()
+        self._ss_hotkey_listener = VoiceHotkeyListener()
         cfg = _load_config()
         self._hotkey_config: dict = cfg.get("voice_hotkey", dict(_DEFAULT_HOTKEY))
+        self._ss_hotkey_config: dict = cfg.get("ss_hotkey", dict(_DEFAULT_HOTKEY))
 
         self.save_dir = tk.StringVar(value=_SAVE_DIR)
         self.model_name = tk.StringVar(value=DEFAULT_MODEL)
@@ -748,6 +750,8 @@ class AARToolApp:
         self.aar_format = tk.StringVar(value=list(AAR_FORMATS.keys())[0])
         self.hotkey_display = tk.StringVar(
             value=self._hotkey_config.get("display") or "未設定")
+        self.ss_hotkey_display = tk.StringVar(
+            value=self._ss_hotkey_config.get("display") or "未設定")
         self.status = tk.StringVar(value="OCR確認中...")
         self.is_running = False
 
@@ -806,6 +810,15 @@ class AARToolApp:
             ttk.Button(hk_frame, text="変更...",
                        command=self._change_hotkey).pack(side="left", padx=(4, 0))
 
+        if _HOTKEY_AVAILABLE:
+            ttk.Label(cfg, text="スクショキー:").grid(row=5, column=0, sticky="w", **pad)
+            ss_hk_frame = ttk.Frame(cfg)
+            ss_hk_frame.grid(row=5, column=1, columnspan=2, sticky="w", **pad)
+            ttk.Entry(ss_hk_frame, textvariable=self.ss_hotkey_display,
+                      state="readonly", width=20).pack(side="left")
+            ttk.Button(ss_hk_frame, text="変更...",
+                       command=self._change_ss_hotkey).pack(side="left", padx=(4, 0))
+
         cfg.columnconfigure(1, weight=1)
 
         # ── コントロールフレーム ────────────────────────────────────────
@@ -824,6 +837,10 @@ class AARToolApp:
                                     command=self.toggle_voice_memo, width=18,
                                     state="disabled" if not _VOICE_AVAILABLE else "disabled")
         self.voice_btn.pack(side="left", padx=4)
+
+        self.ss_btn = ttk.Button(ctrl, text="📷 スクショ",
+                                 command=self.take_screenshot, width=12, state="disabled")
+        self.ss_btn.pack(side="left", padx=4)
 
         self.aar_btn = ttk.Button(ctrl, text="✦ AAR生成（任意）",
                                   command=self.generate_aar_action, width=18, state="disabled")
@@ -937,6 +954,15 @@ class AARToolApp:
             saved["voice_hotkey"] = cfg
             _save_config(saved)
 
+    def _change_ss_hotkey(self) -> None:
+        cfg = _capture_hotkey_dialog(self.root)
+        if cfg:
+            self._ss_hotkey_config = cfg
+            self.ss_hotkey_display.set(cfg["display"])
+            saved = _load_config()
+            saved["ss_hotkey"] = cfg
+            _save_config(saved)
+
     # ------------------------------------------------------------------
     # ログ表示ヘルパー
     # ------------------------------------------------------------------
@@ -966,17 +992,28 @@ class AARToolApp:
         self.stop_btn.config(state="normal")
         self.aar_btn.config(state="disabled")
         self.window_combo.config(state="disabled")
-        hint = self._hotkey_config.get("display", "")
-        if _VOICE_AVAILABLE and _HOTKEY_AVAILABLE and hint:
-            self.status.set(f"記録中...  [{hint}: ボイスメモ切替]")
-            self._hotkey_listener.start(
-                self._hotkey_config,
-                lambda: self.root.after(0, self.toggle_voice_memo),
-            )
-        else:
-            self.status.set("記録中...")
+        hints = []
+        if _VOICE_AVAILABLE and _HOTKEY_AVAILABLE:
+            voice_hint = self._hotkey_config.get("display", "")
+            if voice_hint:
+                hints.append(f"{voice_hint}: ボイスメモ")
+                self._hotkey_listener.start(
+                    self._hotkey_config,
+                    lambda: self.root.after(0, self.toggle_voice_memo),
+                )
+        if _HOTKEY_AVAILABLE:
+            ss_hint = self._ss_hotkey_config.get("display", "")
+            if ss_hint:
+                hints.append(f"{ss_hint}: スクショ")
+                self._ss_hotkey_listener.start(
+                    self._ss_hotkey_config,
+                    lambda: self.root.after(0, self.take_screenshot),
+                )
+        hint_str = "  [" + " / ".join(hints) + "]" if hints else ""
+        self.status.set(f"記録中...{hint_str}")
         if _VOICE_AVAILABLE:
             self.voice_btn.config(state="normal")
+        self.ss_btn.config(state="normal")
 
         self.log_area.config(state="normal")
         self.log_area.delete("1.0", "end")
@@ -999,6 +1036,7 @@ class AARToolApp:
             return
         self.stop_btn.config(state="disabled")
         self.voice_btn.config(state="disabled")
+        self.ss_btn.config(state="disabled")
         self.status.set("停止中...")
 
         # ボイスメモが ON なら停止して保存
@@ -1025,8 +1063,10 @@ class AARToolApp:
     def _reset_ui_stopped(self) -> None:
         self.is_running = False
         self._hotkey_listener.stop()
+        self._ss_hotkey_listener.stop()
         self.start_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
+        self.ss_btn.config(state="disabled")
         self.aar_btn.config(state="normal")
         self.window_combo.config(state="normal")
         self.status.set("停止中")
@@ -1057,6 +1097,30 @@ class AARToolApp:
                 save_dir, game_title, self.voice_recorder._start_time)
         except Exception as e:
             messagebox.showerror("ボイスメモエラー", f"録音を開始できませんでした:\n{e}")
+
+    def take_screenshot(self) -> None:
+        if not self.worker:
+            return
+        save_dir = self.save_dir.get() or _SAVE_DIR
+        game_title = self.window_title.get()
+        if game_title == WINDOW_ALL:
+            game_title = "全画面"
+        window_title = self.window_title.get()
+        ts = datetime.datetime.now()
+
+        def _do():
+            try:
+                img = _capture_game(window_title)
+                ss_dir = os.path.join(save_dir, "スクリーンショット")
+                os.makedirs(ss_dir, exist_ok=True)
+                game_safe = _safe_filename(game_title)
+                fname = f"Screenshot_{game_safe}_{ts.strftime('%Y%m%d_%H%M%S')}.png"
+                img.save(os.path.join(ss_dir, fname), "PNG")
+                self.root.after(0, lambda: self._append_log(
+                    f"[システム] スクリーンショット: スクリーンショット/{fname}"))
+            except Exception as e:
+                _write_error_log(f"Screenshot capture error: {e}")
+        threading.Thread(target=_do, daemon=True).start()
 
     def _capture_voice_screenshot(self, save_dir: str, game_title: str,
                                    ts: datetime.datetime) -> None:
