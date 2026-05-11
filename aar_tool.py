@@ -573,6 +573,7 @@ class AARToolApp:
         self.voice_recorder: VoiceRecorder | None = None
         self.voice_on = False
         self._voice_memo_paths: list[str] = []
+        self._replay_clip_paths: list[str] = []
         self._session_start: datetime.datetime | None = None
         self._hotkey_listener = VoiceHotkeyListener()
         self._ss_hotkey_listener = VoiceHotkeyListener()
@@ -820,6 +821,7 @@ class AARToolApp:
     # ------------------------------------------------------------------
     def start_session(self) -> None:
         self._voice_memo_paths = []
+        self._replay_clip_paths = []
         self._session_start = datetime.datetime.now()
         self.is_running = True
         self.start_btn.config(state="disabled")
@@ -879,9 +881,11 @@ class AARToolApp:
         self.start_btn.config(state="normal")
         self.window_combo.config(state="normal")
         self.status.set("待機中")
+        clip_count = len(self._replay_clip_paths)
+        clip_note = f"リプレイ {clip_count} クリップ保存済み。" if clip_count else "リプレイなし。"
         self._append_log(
             f"[システム] 記録停止 {datetime.datetime.now().strftime('%H:%M:%S')}\n"
-            f"録画を停止したら「🎬 動画を分析」を押してください。"
+            f"{clip_note}録画を停止したら「🎬 動画を分析」を押してください。"
         )
         self.analyze_btn.config(state="normal")
 
@@ -902,8 +906,8 @@ class AARToolApp:
         if not rec_folder or not os.path.isdir(rec_folder):
             return
 
-        deadline = triggered_at.timestamp() + 90  # 最大90秒待機
         import time
+        deadline = triggered_at.timestamp() + 90
         new_clip = None
         while time.time() < deadline:
             time.sleep(2)
@@ -921,43 +925,16 @@ class AARToolApp:
                 break
 
         if not new_clip:
-            self.root.after(0, lambda: self._append_log("[リプレイ] クリップが見つかりませんでした（90秒タイムアウト）"))
+            self.root.after(0, lambda: self._append_log(
+                "[リプレイ] クリップが見つかりませんでした（90秒タイムアウト）"))
             return
 
+        self._replay_clip_paths.append(new_clip)
+        count = len(self._replay_clip_paths)
         fname = os.path.basename(new_clip)
-        self.root.after(0, lambda: self._append_log(f"[リプレイ] クリップ検出: {fname} — 分析開始..."))
-
-        try:
-            analyzer = VideoAnalyzer(vision_model=self.vision_model_name.get() or DEFAULT_VISION_MODEL)
-            desc = analyzer.analyze_clip(new_clip)
-
-            # 直近のボイスメモを紐付け（前後3分以内）
-            voice_note = ""
-            for vp in self._voice_memo_paths:
-                try:
-                    mtime = datetime.datetime.fromtimestamp(os.path.getmtime(vp))
-                    if abs((mtime - triggered_at).total_seconds()) <= 180:
-                        with open(vp, encoding="utf-8") as f:
-                            voice_note = "\n**ボイスメモ**: " + f.read().strip().split("\n\n", 1)[-1]
-                        break
-                except Exception:
-                    pass
-
-            entry = f"[リプレイ {triggered_at.strftime('%H:%M:%S')}]\n{desc}{voice_note}"
-            self.root.after(0, lambda: self._append_log(entry))
-
-            # ファイルに追記
-            save_dir = self.save_dir.get() or _SAVE_DIR
-            os.makedirs(save_dir, exist_ok=True)
-            clip_memo_path = os.path.join(
-                save_dir,
-                f"Replay_{_safe_filename(self.window_title.get())}_{triggered_at.strftime('%Y%m%d_%H%M%S')}.md",
-            )
-            with open(clip_memo_path, "w", encoding="utf-8") as f:
-                f.write(entry + "\n")
-        except Exception as e:
-            _write_error_log(f"replay clip analysis error: {e}")
-            self.root.after(0, lambda: self._append_log(f"[リプレイ] 分析失敗: {e}"))
+        self.root.after(0, lambda: self._append_log(
+            f"[リプレイ] 📼 保存確認: {fname}  （累計 {count} クリップ）\n"
+            f"  → ゲーム終了後「🎬 動画を分析」で一括分析されます"))
 
     # ------------------------------------------------------------------
     # ボイスメモ
