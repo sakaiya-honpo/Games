@@ -31,7 +31,7 @@ jobs:
           # ---------------------------------------------------------------
           $pkgs = "$dist\Lib\site-packages"
           New-Item -ItemType Directory -Path $pkgs -Force | Out-Null
-          pip install mss pygetwindow ollama Pillow sounddevice SpeechRecognition pynput numpy `
+          pip install mss pygetwindow ollama Pillow sounddevice SpeechRecognition pynput numpy opencv-python notion-client `
             --target $pkgs --no-warn-script-location
 
           # ---------------------------------------------------------------
@@ -67,14 +67,7 @@ jobs:
           }
 
           # ---------------------------------------------------------------
-          # 5. OCR ヘルパー（.NET Framework 4.8 exe）をビルドして同梱
-          # ---------------------------------------------------------------
-          dotnet publish ocr_helper\ocr_helper.csproj -c Release -o "$dist\_ocr_tmp"
-          Copy-Item "$dist\_ocr_tmp\ocr_helper.exe" "$dist\"
-          Remove-Item "$dist\_ocr_tmp" -Recurse -Force
-
-          # ---------------------------------------------------------------
-          # 6. アプリ本体をコピー
+          # 5. アプリ本体をコピー
           # ---------------------------------------------------------------
           Copy-Item aar_tool.py $dist\
 
