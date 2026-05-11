@@ -863,10 +863,7 @@ class AARToolApp:
         self.log_area.config(state="normal")
         self.log_area.delete("1.0", "end")
         self.log_area.config(state="disabled")
-        self._append_log(
-            f"[システム] 記録開始 {self._session_start.strftime('%Y-%m-%d %H:%M:%S')}\n"
-            f"AMD ReLive / OBS で録画を開始してください。"
-        )
+        self._append_log(f"[システム] 記録開始 {self._session_start.strftime('%Y-%m-%d %H:%M:%S')}")
 
     def stop_session(self) -> None:
         self.stop_btn.config(state="disabled")
