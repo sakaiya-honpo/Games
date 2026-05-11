@@ -573,12 +573,15 @@ class AARToolApp:
         self.voice_recorder: VoiceRecorder | None = None
         self.voice_on = False
         self._voice_memo_paths: list[str] = []
+        self._replay_clip_paths: list[str] = []
         self._session_start: datetime.datetime | None = None
         self._hotkey_listener = VoiceHotkeyListener()
         self._ss_hotkey_listener = VoiceHotkeyListener()
+        self._replay_hotkey_listener = VoiceHotkeyListener()
         cfg = _load_config()
         self._hotkey_config: dict = cfg.get("voice_hotkey", dict(_DEFAULT_HOTKEY))
         self._ss_hotkey_config: dict = cfg.get("ss_hotkey", dict(_DEFAULT_HOTKEY))
+        self._replay_hotkey_config: dict = cfg.get("replay_hotkey", dict(_DEFAULT_HOTKEY))
 
         self.save_dir = tk.StringVar(value=_SAVE_DIR)
         self.rec_folder = tk.StringVar(value=cfg.get("rec_folder", ""))
@@ -587,6 +590,7 @@ class AARToolApp:
         self.window_title = tk.StringVar(value=WINDOW_ALL)
         self.hotkey_display = tk.StringVar(value=self._hotkey_config.get("display") or "未設定")
         self.ss_hotkey_display = tk.StringVar(value=self._ss_hotkey_config.get("display") or "未設定")
+        self.replay_hotkey_display = tk.StringVar(value=self._replay_hotkey_config.get("display") or "未設定")
         self.notion_token = tk.StringVar(value=cfg.get("notion_token", ""))
         self.notion_db_id = tk.StringVar(value=cfg.get("notion_db_id", ""))
         self.notion_auto_push = tk.BooleanVar(value=cfg.get("notion_auto_push", False))
@@ -645,6 +649,16 @@ class AARToolApp:
                       state="readonly", width=20).pack(side="left")
             ttk.Button(ss_f, text="変更...",
                        command=self._change_ss_hotkey).pack(side="left", padx=(4, 0))
+
+            ttk.Label(cfg_frame, text="リプレイ保存キー:").grid(row=6, column=0, sticky="w", **pad)
+            rp_f = ttk.Frame(cfg_frame)
+            rp_f.grid(row=6, column=1, columnspan=2, sticky="w", **pad)
+            ttk.Entry(rp_f, textvariable=self.replay_hotkey_display,
+                      state="readonly", width=20).pack(side="left")
+            ttk.Button(rp_f, text="変更...",
+                       command=self._change_replay_hotkey).pack(side="left", padx=(4, 0))
+            ttk.Label(rp_f, text="ReLive/ShadowPlayと同じキーを設定",
+                      foreground="gray").pack(side="left", padx=(8, 0))
 
         cfg_frame.columnconfigure(1, weight=1)
 
@@ -757,6 +771,15 @@ class AARToolApp:
             saved["ss_hotkey"] = cfg
             _save_config(saved)
 
+    def _change_replay_hotkey(self) -> None:
+        cfg = _capture_hotkey_dialog(self.root)
+        if cfg:
+            self._replay_hotkey_config = cfg
+            self.replay_hotkey_display.set(cfg["display"])
+            saved = _load_config()
+            saved["replay_hotkey"] = cfg
+            _save_config(saved)
+
     def _save_notion_config(self) -> None:
         saved = _load_config()
         saved["notion_token"] = self.notion_token.get()
@@ -798,6 +821,7 @@ class AARToolApp:
     # ------------------------------------------------------------------
     def start_session(self) -> None:
         self._voice_memo_paths = []
+        self._replay_clip_paths = []
         self._session_start = datetime.datetime.now()
         self.is_running = True
         self.start_btn.config(state="disabled")
@@ -822,6 +846,13 @@ class AARToolApp:
                     self._ss_hotkey_config,
                     lambda: self.root.after(0, self.take_screenshot),
                 )
+            rp_hint = self._replay_hotkey_config.get("display", "")
+            if rp_hint:
+                hints.append(f"{rp_hint}: リプレイ保存")
+                self._replay_hotkey_listener.start(
+                    self._replay_hotkey_config,
+                    lambda: self.root.after(0, self._on_replay_hotkey),
+                )
 
         hint_str = "  [" + " / ".join(hints) + "]" if hints else ""
         self.status.set(f"記録中...{hint_str}")
@@ -843,17 +874,67 @@ class AARToolApp:
         self.ss_btn.config(state="disabled")
         self._hotkey_listener.stop()
         self._ss_hotkey_listener.stop()
+        self._replay_hotkey_listener.stop()
         if self.voice_on:
             self._stop_voice_memo()
         self.is_running = False
         self.start_btn.config(state="normal")
         self.window_combo.config(state="normal")
         self.status.set("待機中")
+        clip_count = len(self._replay_clip_paths)
+        clip_note = f"リプレイ {clip_count} クリップ保存済み。" if clip_count else "リプレイなし。"
         self._append_log(
             f"[システム] 記録停止 {datetime.datetime.now().strftime('%H:%M:%S')}\n"
-            f"録画を停止したら「🎬 動画を分析」を押してください。"
+            f"{clip_note}録画を停止したら「🎬 動画を分析」を押してください。"
         )
         self.analyze_btn.config(state="normal")
+
+    # ------------------------------------------------------------------
+    # インスタントリプレイ検知
+    # ------------------------------------------------------------------
+    def _on_replay_hotkey(self) -> None:
+        triggered_at = datetime.datetime.now()
+        self._append_log(f"[リプレイ] 保存キー検知 {triggered_at.strftime('%H:%M:%S')} — クリップ待機中...")
+        threading.Thread(
+            target=self._watch_for_new_clip,
+            args=(triggered_at,),
+            daemon=True,
+        ).start()
+
+    def _watch_for_new_clip(self, triggered_at: datetime.datetime) -> None:
+        rec_folder = self.rec_folder.get().strip()
+        if not rec_folder or not os.path.isdir(rec_folder):
+            return
+
+        import time
+        deadline = triggered_at.timestamp() + 90
+        new_clip = None
+        while time.time() < deadline:
+            time.sleep(2)
+            for root_dir, _, files in os.walk(rec_folder):
+                for fname in files:
+                    if os.path.splitext(fname)[1].lower() not in VIDEO_EXTENSIONS:
+                        continue
+                    fpath = os.path.join(root_dir, fname)
+                    if os.path.getmtime(fpath) >= triggered_at.timestamp():
+                        new_clip = fpath
+                        break
+                if new_clip:
+                    break
+            if new_clip:
+                break
+
+        if not new_clip:
+            self.root.after(0, lambda: self._append_log(
+                "[リプレイ] クリップが見つかりませんでした（90秒タイムアウト）"))
+            return
+
+        self._replay_clip_paths.append(new_clip)
+        count = len(self._replay_clip_paths)
+        fname = os.path.basename(new_clip)
+        self.root.after(0, lambda: self._append_log(
+            f"[リプレイ] 📼 保存確認: {fname}  （累計 {count} クリップ）\n"
+            f"  → ゲーム終了後「🎬 動画を分析」で一括分析されます"))
 
     # ------------------------------------------------------------------
     # ボイスメモ
