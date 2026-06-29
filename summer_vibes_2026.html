@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Summer Vibes 2026 - Apple Music Playlist</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    min-height: 100vh; color: #e0e0e0; padding: 20px;
+  }
+  .container { max-width: 800px; margin: 0 auto; }
+  h1 { text-align: center; font-size: 2.2em; color: #fff; margin: 20px 0 5px; }
+  .subtitle { text-align: center; color: #aaa; margin-bottom: 30px; font-size: 0.95em; }
+  .instructions {
+    background: rgba(255,255,255,0.08); border-radius: 12px; padding: 20px;
+    margin-bottom: 25px; border: 1px solid rgba(255,255,255,0.1);
+  }
+  .instructions h2 { color: #fa5c7c; font-size: 1.1em; margin-bottom: 10px; }
+  .instructions p, .instructions li { color: #ccc; font-size: 0.9em; line-height: 1.6; }
+  .instructions ol { padding-left: 20px; }
+  .song-list { list-style: none; }
+  .song-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px; border-radius: 10px; margin-bottom: 6px;
+    background: rgba(255,255,255,0.05); transition: background 0.2s;
+  }
+  .song-item:hover { background: rgba(255,255,255,0.12); }
+  .song-num { color: #666; font-size: 0.85em; min-width: 28px; text-align: right; }
+  .song-info { flex: 1; }
+  .song-title { color: #fff; font-weight: 500; font-size: 1em; }
+  .song-artist { color: #999; font-size: 0.85em; margin-top: 2px; }
+  .song-link {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: #fa2d55; color: #fff; text-decoration: none;
+    padding: 7px 14px; border-radius: 20px; font-size: 0.8em; font-weight: 500;
+    white-space: nowrap; transition: background 0.2s;
+  }
+  .song-link:hover { background: #e0264c; }
+  .badge {
+    display: inline-block; background: rgba(250,45,85,0.2); color: #fa5c7c;
+    padding: 2px 8px; border-radius: 10px; font-size: 0.75em; margin-left: 8px;
+  }
+  .select-all-bar {
+    position: sticky; top: 0; z-index: 10; padding: 12px 0;
+    background: rgba(26,26,46,0.95); backdrop-filter: blur(10px);
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .btn {
+    background: #fa2d55; color: #fff; border: none; padding: 10px 20px;
+    border-radius: 20px; cursor: pointer; font-size: 0.9em; font-weight: 500;
+  }
+  .btn:hover { background: #e0264c; }
+  .btn-outline {
+    background: transparent; border: 1px solid #fa2d55; color: #fa2d55;
+  }
+  .btn-outline:hover { background: rgba(250,45,85,0.1); }
+  .counter { color: #aaa; font-size: 0.9em; }
+  input[type="checkbox"] { accent-color: #fa2d55; width: 18px; height: 18px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🌊 Summer Vibes 2026</h1>
+  <p class="subtitle">夏のR&B / HIP HOP プレイリスト — 50曲</p>
+
+  <div class="instructions">
+    <h2>📱 Apple Music プレイリストの作り方</h2>
+    <ol>
+      <li>Apple Music アプリで「Summer Vibes 2026」という新しいプレイリストを作成</li>
+      <li>下の各曲の「Apple Musicで検索」ボタンをクリック</li>
+      <li>Apple Music で曲を見つけたら「...」メニュー → 「プレイリストに追加」を選択</li>
+      <li>または「まとめて開く」ボタンで選択した曲を一括検索できます</li>
+    </ol>
+  </div>
+
+  <div class="select-all-bar">
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+      <input type="checkbox" id="selectAll" onchange="toggleAll(this.checked)">
+      <span class="counter" id="counter">0 / 50 選択中</span>
+    </label>
+    <button class="btn" onclick="openSelected()">選択した曲をまとめて開く</button>
+  </div>
+
+  <ul class="song-list" id="songList"></ul>
+</div>
+
+<script>
+const songs = [
+  { num: 1, artist: "SOUL'd OUT", title: "イルカ" },
+  { num: 2, artist: "SOUL'd OUT", title: "Picana" },
+  { num: 3, artist: "SOUL'd OUT", title: "ウェカピポ" },
+  { num: 4, artist: "SOUL'd OUT", title: "To All Tha Dreamers" },
+  { num: 5, artist: "SOUL'd OUT", title: "ALIVE" },
+  { num: 6, artist: "SOUL'd OUT", title: "Dream Drive" },
+  { num: 7, artist: "KICK THE CAN CREW", title: "アンバランス" },
+  { num: 8, artist: "KICK THE CAN CREW", title: "マルシェ" },
+  { num: 9, artist: "KICK THE CAN CREW", title: "地球ブルース〜337〜" },
+  { num: 10, artist: "KICK THE CAN CREW", title: "千%" },
+  { num: 11, artist: "Creepy Nuts", title: "のびしろ" },
+  { num: 12, artist: "Creepy Nuts", title: "Bling-Bang-Bang-Born" },
+  { num: 13, artist: "Creepy Nuts", title: "よふかしのうた" },
+  { num: 14, artist: "Creepy Nuts", title: "二度寝" },
+  { num: 15, artist: "Creepy Nuts", title: "かつて天才だった俺たちへ" },
+  { num: 16, artist: "m-flo", title: "come again" },
+  { num: 17, artist: "m-flo loves CHEMISTRY", title: "Astrosexy" },
+  { num: 18, artist: "m-flo", title: "been so long" },
+  { num: 19, artist: "RIP SLYME", title: "楽園ベイベー" },
+  { num: 20, artist: "RIP SLYME", title: "Hot chocolate" },
+  { num: 21, artist: "RIP SLYME", title: "STEPPER'S DELIGHT" },
+  { num: 22, artist: "KREVA", title: "イッサイガッサイ" },
+  { num: 23, artist: "KREVA", title: "音色" },
+  { num: 24, artist: "DOUBLE", title: "Shake" },
+  { num: 25, artist: "AI", title: "Story" },
+  { num: 26, artist: "加藤ミリヤ × 清水翔太", title: "Love Forever" },
+  { num: 27, artist: "清水翔太", title: "My Boo" },
+  { num: 28, artist: "久保田利伸 feat. MISIA", title: "LA・LA・LA LOVE SONG" },
+  { num: 29, artist: "MISIA", title: "つつみ込むように…" },
+  { num: 30, artist: "Nujabes feat. Shing02", title: "Luv(sic) pt.3" },
+  { num: 31, artist: "Nujabes", title: "Aruarian Dance" },
+  { num: 32, artist: "MONDO GROSSO", title: "ラビリンス" },
+  { num: 33, artist: "MONDO GROSSO", title: "TIME" },
+  { num: 34, artist: "宇多田ヒカル", title: "traveling" },
+  { num: 35, artist: "Crystal Kay", title: "恋におちたら" },
+  { num: 36, artist: "三浦大知", title: "(RE)PLAY" },
+  { num: 37, artist: "SKY-HI", title: "Limo" },
+  { num: 38, artist: "AK-69", title: "Flying B" },
+  { num: 39, artist: "AKLO", title: "RED PILL" },
+  { num: 40, artist: "Awich", title: "Queendom" },
+  { num: 41, artist: "JP THE WAVY", title: "Cho Wavy De Gomenne" },
+  { num: 42, artist: "BAD HOP", title: "Kawasaki Drift" },
+  { num: 43, artist: "SIRUP", title: "LOOP" },
+  { num: 44, artist: "SIRUP", title: "Do Well" },
+  { num: 45, artist: "Vaundy", title: "踊り子" },
+  { num: 46, artist: "BENI", title: "Kiss Kiss Kiss" },
+  { num: 47, artist: "Awich", title: "GILA GILA" },
+  { num: 48, artist: "KANDYTOWN", title: "Cruisin'" },
+  { num: 49, artist: "LEX", title: "どこにもいない" },
+  { num: 50, artist: "iri", title: "Wonderland" },
+];
+
+function getSearchUrl(artist, title) {
+  const q = encodeURIComponent(`${artist} ${title}`);
+  return `https://music.apple.com/jp/search?term=${q}`;
+}
+
+function renderSongs() {
+  const list = document.getElementById("songList");
+  list.innerHTML = songs.map(s => `
+    <li class="song-item">
+      <input type="checkbox" class="song-check" data-num="${s.num}" onchange="updateCounter()">
+      <span class="song-num">${s.num}</span>
+      <div class="song-info">
+        <div class="song-title">${s.title}</div>
+        <div class="song-artist">${s.artist}</div>
+      </div>
+      <a class="song-link" href="${getSearchUrl(s.artist, s.title)}" target="_blank">
+        ♫ Apple Musicで検索
+      </a>
+    </li>
+  `).join("");
+}
+
+function toggleAll(checked) {
+  document.querySelectorAll(".song-check").forEach(cb => cb.checked = checked);
+  updateCounter();
+}
+
+function updateCounter() {
+  const checked = document.querySelectorAll(".song-check:checked").length;
+  document.getElementById("counter").textContent = `${checked} / 50 選択中`;
+  document.getElementById("selectAll").checked = checked === 50;
+}
+
+function openSelected() {
+  const checked = document.querySelectorAll(".song-check:checked");
+  if (checked.length === 0) {
+    alert("曲を選択してください");
+    return;
+  }
+  if (checked.length > 10) {
+    if (!confirm(`${checked.length}曲を一度に開きます。ブラウザのポップアップブロックを解除してください。続けますか？`)) return;
+  }
+  checked.forEach((cb, i) => {
+    const num = parseInt(cb.dataset.num);
+    const song = songs[num - 1];
+    setTimeout(() => {
+      window.open(getSearchUrl(song.artist, song.title), "_blank");
+    }, i * 500);
+  });
+}
+
+renderSongs();
+</script>
+</body>
+</html>
