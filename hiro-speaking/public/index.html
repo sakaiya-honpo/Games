@@ -282,6 +282,11 @@ input, textarea { font-family: inherit; font-size: inherit; }
 .topic-card:hover { border-color: var(--jade); background: var(--jade-soft); }
 .topic-card-icon { font-size: 24px; }
 .topic-card-name { font-size: 14px; font-weight: 500; }
+.topic-section-label { grid-column: 1 / -1; font-size: 13px; font-weight: 600; color: var(--text-secondary); padding: 4px 0 0; }
+.topic-card-news { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 10px; }
+.topic-card-news .topic-card-icon { font-size: 20px; flex-shrink: 0; }
+.topic-card-news .topic-card-name { font-size: 13px; flex: 1; text-align: left; line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.topic-card-source { font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; }
 
 .progress-content { display: flex; flex-direction: column; gap: 16px; }
 .progress-stage { text-align: center; padding: 16px; background: var(--jade-soft); border-radius: 14px; }
@@ -660,6 +665,7 @@ const STAGE_THRESHOLDS = [null, null,
   { phrases: 300, correctionRate: 0.3, avgWords: 10 }
 ];
 const TOPIC_ICONS = {
+  news:'📰',
   food:'🍽', weather:'🌤', daily:'☀️', shopping:'🛒', hobbies:'🎮',
   weekend:'📅', travel:'✈️', work:'💼', future:'🔮', technology:'💻',
   environment:'🌍', education:'📚', culture:'🌐', media:'📱', society:'🏛'
@@ -725,10 +731,28 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 // ─── Topic Modal ───
+let newsItems = [];
 async function openTopicModal() {
   await loadAppData();
   const grid = $('topicGrid');
-  grid.innerHTML = appData.availableTopics.map(t => `
+
+  let newsHTML = '';
+  try {
+    const newsRes = await api('/api/news');
+    newsItems = newsRes.items || [];
+    if (newsItems.length > 0) {
+      newsHTML = `<div class="topic-section-label">📰 今日のニュース</div>` +
+        newsItems.map((n, i) => `
+          <button class="topic-card topic-card-news" data-topic="news" data-news-index="${i}">
+            <span class="topic-card-icon">📰</span>
+            <span class="topic-card-name">${escHtml(n.title)}</span>
+            <span class="topic-card-source">${escHtml(n.source)}</span>
+          </button>`).join('') +
+        `<div class="topic-section-label" style="margin-top:12px">💬 定番トピック</div>`;
+    }
+  } catch (e) {}
+
+  grid.innerHTML = newsHTML + appData.availableTopics.map(t => `
     <button class="topic-card" data-topic="${t.id}">
       <span class="topic-card-icon">${TOPIC_ICONS[t.id] || '💬'}</span>
       <span class="topic-card-name">${t.name}</span>
@@ -736,7 +760,13 @@ async function openTopicModal() {
   `).join('');
   grid.querySelectorAll('.topic-card').forEach(card => {
     card.addEventListener('click', () => {
-      startConversation(card.dataset.topic);
+      const tid = card.dataset.topic;
+      if (tid === 'news') {
+        const idx = parseInt(card.dataset.newsIndex);
+        startConversation('news', newsItems[idx] ? newsItems[idx].title : '');
+      } else {
+        startConversation(tid);
+      }
       $('topicModal').classList.remove('open');
     });
   });
@@ -746,7 +776,7 @@ $('topicModal').addEventListener('click', e => { if (e.target === $('topicModal'
 $('startBtn').addEventListener('click', openTopicModal);
 $('newTopicBtn').addEventListener('click', openTopicModal);
 
-async function startConversation(topicId) {
+async function startConversation(topicId, newsHeadline) {
   currentTopicId = topicId;
   $('welcomeScreen').style.display = 'none';
   $('conversationArea').style.display = 'flex';
@@ -754,7 +784,9 @@ async function startConversation(topicId) {
 
   showTyping();
   try {
-    const data = await api('/api/start', { topicId });
+    const body = { topicId };
+    if (newsHeadline) body.newsHeadline = newsHeadline;
+    const data = await api('/api/start', body);
     removeTyping();
     addAIQuestion(data.question);
     inputEl.focus();

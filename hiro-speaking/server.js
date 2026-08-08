@@ -62,6 +62,42 @@ const EXE_DIR = process.pkg ? path.dirname(process.execPath) : __dirname;
 const ENV_FILE = path.join(EXE_DIR, '.env');
 const DATA_FILE = path.join(EXE_DIR, 'data.json');
 
+// ─── News RSS ───
+const NEWS_FEEDS = [
+  { url: 'https://feeds.bbci.co.uk/news/world/rss.xml', source: 'BBC' },
+  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml', source: 'NYT' },
+];
+let cachedNews = { items: [], fetchedAt: 0 };
+
+async function fetchNews() {
+  const now = Date.now();
+  if (cachedNews.items.length > 0 && now - cachedNews.fetchedAt < 3600000) return cachedNews.items;
+
+  const items = [];
+  for (const feed of NEWS_FEEDS) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(feed.url, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!res.ok) continue;
+      const xml = await res.text();
+      const itemBlocks = xml.split('<item>').slice(1, 6);
+      for (const block of itemBlocks) {
+        const tMatch = block.match(/<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/);
+        if (tMatch) {
+          const title = tMatch[1].trim().replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+          if (title) items.push({ title, source: feed.source });
+        }
+      }
+    } catch (e) {}
+  }
+  if (items.length > 0) {
+    cachedNews = { items, fetchedAt: now };
+  }
+  return cachedNews.items;
+}
+
 function loadEnv() {
   try {
     if (fs.existsSync(ENV_FILE)) {
@@ -217,7 +253,7 @@ function buildSystemPrompt(data, topicId, stageOverride) {
 【現在のステージ】Stage ${stage}（${STAGE_NAMES[stage]}）
 ${stageInstructions[stage]}
 
-【現在の会話トピック】${topicInfo ? topicInfo.name + '（' + topicInfo.keywords + '）' : '自由'}
+【現在の会話トピック】${topicInfo ? topicInfo.name + '（' + topicInfo.keywords + '）' : '今日のニュース（自由な話題）'}
 
 【応答形式】
 必ず以下のJSON形式のみで応答してください。JSON以外のテキストは含めないでください。
@@ -248,6 +284,21 @@ ${stage <= 2 ? '事実を聞くシンプルな質問（What / Where / When / Who
 ${stage === 3 ? '理由や比較を聞く質問にしてください。' : ''}
 ${stage === 4 ? '意見や仮定を聞く質問にしてください。' : ''}
 ${stage === 5 ? '分析や議論を促す質問にしてください。' : ''}
+
+英語の質問文だけを返してください。JSON不要。日本語不要。`;
+}
+
+function buildNewsStartPrompt(data, headline, stageOverride) {
+  const stage = stageOverride || data.stage;
+  return `あなたはフレンドリーな英会話の練習相手です。
+ユーザーはCEFR ${STAGE_NAMES[stage]}レベルの日本語話者です。
+
+今日のニュースの話題で会話を始めます。
+ニュースの見出し: "${headline || 'today\'s world news'}"
+
+この見出しに関連するStage ${stage}（${STAGE_NAMES[stage]}）に合った質問を英語で1つだけ投げてください。
+${stage <= 2 ? 'シンプルな事実質問にしてください（例: Did you hear about...? What do you think about...?）' : ''}
+${stage >= 3 ? '意見や考えを聞く質問にしてください。' : ''}
 
 英語の質問文だけを返してください。JSON不要。日本語不要。`;
 }
@@ -345,19 +396,32 @@ app.post('/api/phrases', (req, res) => {
   res.status(400).json({ error: 'invalid action' });
 });
 
+app.get('/api/news', async (req, res) => {
+  try {
+    const items = await fetchNews();
+    res.json({ items });
+  } catch (e) {
+    res.json({ items: [] });
+  }
+});
+
 app.post('/api/start', async (req, res) => {
-  const { topicId } = req.body;
-  if (!TOPICS[topicId]) return res.status(400).json({ error: 'invalid topic' });
+  const { topicId, newsHeadline } = req.body;
+  if (topicId !== 'news' && !TOPICS[topicId]) return res.status(400).json({ error: 'invalid topic' });
 
   const data = loadData();
   const so = data.stageOverride || null;
   conversationMessages = [];
 
+  const prompt = topicId === 'news'
+    ? buildNewsStartPrompt(data, newsHeadline, so)
+    : buildStartPrompt(data, topicId, so);
+
   try {
     const response = await getClient().messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 200,
-      messages: [{ role: 'user', content: buildStartPrompt(data, topicId, so) }]
+      messages: [{ role: 'user', content: prompt }]
     });
 
     const question = response.content[0].text.trim();
