@@ -357,5 +357,11 @@ app.post('/api/chat', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Hiro Speaking Practice running on http://localhost:${PORT}`);
+  const url = `http://localhost:${PORT}`;
+  console.log(`Hiro Speaking Practice running on ${url}`);
+
+  if (process.env.NO_OPEN) return;
+  const { exec } = require('child_process');
+  const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+  exec(`${cmd} ${url}`);
 });
