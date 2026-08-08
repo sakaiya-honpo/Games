@@ -9,11 +9,53 @@ process.on('uncaughtException', (err) => {
 
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
 const app = express();
 app.use(express.json());
+
+// ─── Simple password auth ───
+const authTokens = new Set();
+
+function parseCookies(header) {
+  const cookies = {};
+  if (!header) return cookies;
+  header.split(';').forEach(c => {
+    const [k, ...v] = c.split('=');
+    cookies[k.trim()] = v.join('=').trim();
+  });
+  return cookies;
+}
+
+app.post('/api/auth', (req, res) => {
+  const pw = process.env.APP_PASSWORD;
+  if (!pw) return res.json({ ok: true });
+  if (req.body.password !== pw) return res.status(401).json({ error: 'パスワードが違います' });
+  const token = crypto.randomBytes(32).toString('hex');
+  authTokens.add(token);
+  res.setHeader('Set-Cookie', `auth=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800`);
+  res.json({ ok: true });
+});
+
+app.get('/api/auth-check', (req, res) => {
+  const pw = process.env.APP_PASSWORD;
+  if (!pw) return res.json({ required: false });
+  const cookies = parseCookies(req.headers.cookie);
+  const authed = cookies.auth && authTokens.has(cookies.auth);
+  res.json({ required: true, authenticated: !!authed });
+});
+
+app.use('/api', (req, res, next) => {
+  if (req.path === '/auth' || req.path === '/auth-check') return next();
+  const pw = process.env.APP_PASSWORD;
+  if (!pw) return next();
+  const cookies = parseCookies(req.headers.cookie);
+  if (cookies.auth && authTokens.has(cookies.auth)) return next();
+  res.status(401).json({ error: 'ログインが必要です' });
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 const EXE_DIR = process.pkg ? path.dirname(process.execPath) : __dirname;

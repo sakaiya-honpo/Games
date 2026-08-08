@@ -333,6 +333,10 @@ input, textarea { font-family: inherit; font-size: inherit; }
 
 .error-msg { padding: 10px 14px; background: #f5ddd8; color: var(--coral); border-radius: 10px; font-size: 13px; margin: 4px 16px; }
 
+.login-overlay {
+  position: fixed; inset: 0; background: var(--bg); z-index: 1100;
+  display: flex; align-items: center; justify-content: center;
+}
 .setup-overlay {
   position: fixed; inset: 0; background: var(--bg); z-index: 1000;
   display: flex; align-items: center; justify-content: center;
@@ -500,6 +504,22 @@ input, textarea { font-family: inherit; font-size: inherit; }
 </style>
 </head>
 <body>
+<div class="login-overlay" id="loginScreen" style="display:none">
+  <div class="setup-card">
+    <div class="setup-header">
+      <div class="setup-header-icon">🔒</div>
+      <h2>ログイン</h2>
+      <p>パスワードを入力してください</p>
+    </div>
+    <div class="setup-field">
+      <label class="setup-label">パスワード</label>
+      <input type="password" class="setup-input" id="loginPasswordInput" placeholder="パスワード" autocomplete="current-password">
+      <div class="setup-error" id="loginError"></div>
+    </div>
+    <button class="setup-submit" id="loginSubmit">ログイン</button>
+  </div>
+</div>
+
 <div class="setup-overlay" id="setupScreen" style="display:none">
   <div class="setup-card">
     <div class="setup-header">
@@ -670,6 +690,10 @@ async function api(path, body) {
     headers: body ? { 'Content-Type': 'application/json' } : {},
     body: body ? JSON.stringify(body) : undefined
   });
+  if (res.status === 401 && path !== '/api/auth' && path !== '/api/auth-check') {
+    $('loginScreen').style.display = 'flex';
+    throw new Error('auth_required');
+  }
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
 }
@@ -1578,8 +1602,32 @@ $('settingsSave').addEventListener('click', () => {
   });
 });
 
+// ─── Login ───
+$('loginSubmit').addEventListener('click', async () => {
+  const pw = $('loginPasswordInput').value;
+  if (!pw) { $('loginError').textContent = 'パスワードを入力してください'; $('loginError').classList.add('show'); return; }
+  $('loginError').classList.remove('show');
+  try {
+    const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) });
+    const data = await res.json();
+    if (!res.ok) { $('loginError').textContent = data.error || 'ログインに失敗しました'; $('loginError').classList.add('show'); return; }
+    $('loginScreen').style.display = 'none';
+    showToast('ログインしました');
+    init();
+  } catch (e) { $('loginError').textContent = '接続エラー'; $('loginError').classList.add('show'); }
+});
+$('loginPasswordInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('loginSubmit').click(); });
+
 // ─── Init ───
 async function init() {
+  try {
+    const authRes = await fetch('/api/auth-check');
+    const auth = await authRes.json();
+    if (auth.required && !auth.authenticated) {
+      $('loginScreen').style.display = 'flex';
+      return;
+    }
+  } catch (e) {}
   const hasKey = await checkApiKey();
   if (!hasKey) {
     $('setupScreen').style.display = 'flex';
