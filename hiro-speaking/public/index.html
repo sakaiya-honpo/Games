@@ -315,6 +315,15 @@ input, textarea { font-family: inherit; font-size: inherit; }
   40% { transform: scale(1); opacity: 1; }
 }
 
+.scroll-top-btn {
+  position: fixed; bottom: 80px; right: max(calc((100% - 480px)/2 + 12px), 12px);
+  width: 40px; height: 40px; border-radius: 50%; background: var(--jade); color: #fff;
+  font-size: 18px; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 8px var(--shadow); z-index: 50; opacity: 0; pointer-events: none;
+  transition: opacity 0.25s, transform 0.25s; transform: translateY(10px);
+}
+.scroll-top-btn.show { opacity: 1; pointer-events: auto; transform: translateY(0); }
+
 .toast {
   position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(20px);
   background: var(--text); color: var(--bg); padding: 10px 20px; border-radius: 20px;
@@ -474,6 +483,7 @@ input, textarea { font-family: inherit; font-size: inherit; }
   </div>
 
   <div class="toast" id="toast"></div>
+  <button class="scroll-top-btn" id="scrollTopBtn" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
 </div>
 
 <script>
@@ -1056,6 +1066,10 @@ async function init() {
   await loadAppData();
 }
 init();
+
+window.addEventListener('scroll', () => {
+  $('scrollTopBtn').classList.toggle('show', window.scrollY > 300);
+});
 </script>
 </body>
 </html>
