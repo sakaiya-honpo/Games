@@ -715,7 +715,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 let newsItems = [];
 let selectedPersonality = localStorage.getItem('personality') || 'default';
 
-const PERSONALITY_ICONS = { default: '😊', challenger: '🤔', curious: '🧐' };
+const PERSONALITY_ICONS = { default: '😊', challenger: '🤔', curious: '🧐', random: '🎲' };
 
 async function openTopicModal() {
   await loadAppData();
@@ -800,6 +800,9 @@ async function startConversation(topicId, newsHeadline) {
     if (newsHeadline) body.newsHeadline = newsHeadline;
     const data = await api('/api/start', body);
     removeTyping();
+    if (selectedPersonality === 'random' && data.personalityName) {
+      showToast(`今回の相手: ${PERSONALITY_ICONS[data.personality] || '💬'} ${data.personalityName}`);
+    }
     addAIQuestion(data.question);
     inputEl.focus();
   } catch (e) {

@@ -459,6 +459,7 @@ app.get('/api/news', async (req, res) => {
 
 app.get('/api/personalities', (req, res) => {
   const list = Object.entries(PERSONALITIES).map(([id, p]) => ({ id, name: p.name }));
+  list.push({ id: 'random', name: 'ランダム' });
   res.json({ personalities: list, current: currentPersonality });
 });
 
@@ -466,7 +467,10 @@ app.post('/api/start', async (req, res) => {
   const { topicId, newsHeadline, personality } = req.body;
   if (topicId !== 'news' && !TOPICS[topicId]) return res.status(400).json({ error: 'invalid topic' });
 
-  if (personality && PERSONALITIES[personality]) {
+  if (personality === 'random') {
+    const keys = Object.keys(PERSONALITIES);
+    currentPersonality = keys[Math.floor(Math.random() * keys.length)];
+  } else if (personality && PERSONALITIES[personality]) {
     currentPersonality = personality;
   }
 
@@ -488,7 +492,8 @@ app.post('/api/start', async (req, res) => {
     const question = response.content[0].text.trim();
     conversationMessages = [{ role: 'assistant', content: question }];
 
-    res.json({ question, stage: data.stage });
+    const pInfo = PERSONALITIES[currentPersonality];
+    res.json({ question, stage: data.stage, personality: currentPersonality, personalityName: pInfo ? pInfo.name : '' });
   } catch (e) {
     console.error('API error:', e.message);
     res.status(500).json({ error: 'AI request failed' });
