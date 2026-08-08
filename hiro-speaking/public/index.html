@@ -386,6 +386,117 @@ input, textarea { font-family: inherit; font-size: inherit; }
 }
 .welcome-progress-item .wp-val { font-size: 18px; font-weight: 700; color: var(--jade); line-height: 1.2; }
 .welcome-progress-item .wp-label { font-size: 10px; color: var(--text-tertiary); }
+
+.listening-modes { display: flex; gap: 8px; padding: 0 16px; }
+.listening-mode-btn {
+  flex: 1; padding: 12px 8px; background: var(--surface-raised); border-radius: 12px;
+  border: 1px solid var(--border); display: flex; flex-direction: column; align-items: center;
+  gap: 4px; font-size: 12px; font-weight: 500; color: var(--text-secondary); transition: all 0.15s;
+  text-align: center;
+}
+.listening-mode-btn:hover { border-color: var(--jade); background: var(--jade-soft); }
+.listening-mode-btn.active { border-color: var(--jade); background: var(--jade-soft); color: var(--jade); }
+.listening-mode-btn .mode-icon { font-size: 20px; }
+
+.listening-generate {
+  margin: 12px 16px; padding: 12px 24px; background: var(--jade); color: #fff;
+  border-radius: 20px; font-size: 14px; font-weight: 500; transition: opacity 0.15s; text-align: center;
+}
+.listening-generate:hover { opacity: 0.9; }
+.listening-generate:disabled { opacity: 0.4; }
+
+.listening-exercise {
+  margin: 0 16px; padding: 20px; background: var(--surface-raised); border-radius: 16px;
+  box-shadow: 0 2px 8px var(--shadow); display: flex; flex-direction: column; gap: 16px;
+}
+
+.listening-play-area { display: flex; align-items: center; gap: 12px; justify-content: center; }
+.listening-play-btn {
+  width: 64px; height: 64px; border-radius: 50%; background: var(--jade); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-size: 28px;
+  transition: all 0.15s; flex-shrink: 0;
+}
+.listening-play-btn:hover { opacity: 0.9; transform: scale(1.05); }
+.listening-play-btn.speaking { background: var(--gold); }
+.listening-replay-btn {
+  width: 40px; height: 40px; border-radius: 50%; background: var(--surface); color: var(--text-secondary);
+  display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all 0.15s;
+}
+.listening-replay-btn:hover { background: var(--jade-soft); color: var(--jade); }
+
+.listening-speed {
+  display: flex; align-items: center; gap: 8px; justify-content: center; font-size: 12px; color: var(--text-secondary);
+}
+.listening-speed select {
+  appearance: auto; border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px;
+  background: var(--input-bg); color: var(--text); font-size: 12px; font-family: inherit;
+}
+
+.listening-hint {
+  font-size: 13px; color: var(--text-secondary); text-align: center; line-height: 1.5;
+  padding: 8px 12px; background: var(--surface); border-radius: 10px;
+}
+
+.listening-answer-area { display: flex; flex-direction: column; gap: 10px; }
+.listening-answer-input {
+  width: 100%; border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px;
+  background: var(--input-bg); color: var(--text); font-size: 15px;
+  font-family: var(--font-phrase); outline: none; transition: border-color 0.15s;
+}
+.listening-answer-input:focus { border-color: var(--jade); }
+
+.listening-gapped {
+  font-family: var(--font-phrase); font-size: 16px; line-height: 2; color: var(--text); text-align: center;
+}
+.listening-gapped .gap-input {
+  display: inline-block; width: 80px; border: none; border-bottom: 2px solid var(--jade);
+  background: transparent; color: var(--jade); font-family: var(--font-phrase); font-size: 15px;
+  text-align: center; outline: none; padding: 2px 4px; margin: 0 2px;
+}
+.listening-gapped .gap-input:focus { border-bottom-color: var(--gold); }
+.listening-gapped .gap-input.correct { border-bottom-color: var(--jade); color: var(--jade); }
+.listening-gapped .gap-input.incorrect { border-bottom-color: var(--coral); color: var(--coral); }
+
+.listening-options { display: flex; flex-direction: column; gap: 8px; }
+.listening-option {
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--surface);
+  border-radius: 10px; font-size: 14px; color: var(--text); cursor: pointer; transition: all 0.15s;
+  border: 1px solid transparent;
+}
+.listening-option:hover { border-color: var(--jade); }
+.listening-option.selected { border-color: var(--jade); background: var(--jade-soft); }
+.listening-option.correct-answer { border-color: var(--jade); background: var(--jade-soft); }
+.listening-option.wrong-answer { border-color: var(--coral); background: #f5ddd8; }
+.listening-option input[type="radio"] { accent-color: var(--jade); }
+
+.listening-check-btn {
+  padding: 10px 24px; background: var(--jade); color: #fff; border-radius: 20px;
+  font-size: 14px; font-weight: 500; align-self: center;
+}
+.listening-check-btn:disabled { opacity: 0.4; }
+
+.listening-feedback {
+  padding: 12px 16px; border-radius: 12px; font-size: 13px; line-height: 1.6;
+  animation: msgIn 0.2s ease-out;
+}
+.listening-feedback.good { background: var(--jade-soft); color: var(--jade); }
+.listening-feedback.bad { background: var(--gold-soft); color: var(--text); }
+
+.listening-result {
+  padding: 10px 14px; background: var(--surface); border-radius: 10px; font-size: 13px;
+  line-height: 1.6; color: var(--text-secondary);
+}
+.listening-result .correct-text { font-family: var(--font-phrase); color: var(--jade); font-weight: 500; font-size: 15px; }
+
+.listening-next {
+  padding: 10px 24px; background: var(--surface); color: var(--text-secondary);
+  border-radius: 20px; font-size: 13px; align-self: center; transition: all 0.15s;
+}
+.listening-next:hover { background: var(--jade); color: #fff; }
+
+.listening-stats {
+  padding: 8px 16px; font-size: 12px; color: var(--text-tertiary); text-align: center;
+}
 </style>
 </head>
 <body>
@@ -457,11 +568,13 @@ input, textarea { font-family: inherit; font-size: inherit; }
 
   <div class="panel" id="panelNotebook"></div>
   <div class="panel" id="panelReview"></div>
+  <div class="panel" id="panelListening"></div>
 
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="conversation"><span class="tab-icon">💬</span>会話</button>
     <button class="tab-btn" data-tab="notebook"><span class="tab-icon">📖</span>メモ帳</button>
     <button class="tab-btn" data-tab="review"><span class="tab-icon">🔄</span>復習</button>
+    <button class="tab-btn" data-tab="listening"><span class="tab-icon">🎧</span>リスニング</button>
   </div>
 
   <div class="modal-overlay" id="topicModal">
@@ -579,10 +692,11 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-    const map = { conversation: 'panelConversation', notebook: 'panelNotebook', review: 'panelReview' };
+    const map = { conversation: 'panelConversation', notebook: 'panelNotebook', review: 'panelReview', listening: 'panelListening' };
     $(map[btn.dataset.tab]).classList.add('active');
     if (btn.dataset.tab === 'notebook') renderNotebook();
     if (btn.dataset.tab === 'review') renderReview();
+    if (btn.dataset.tab === 'listening') renderListening();
   });
 });
 
@@ -1044,6 +1158,338 @@ async function renderReview() {
   function goNext() { reviewIndex++; if (reviewIndex >= phrases.length) reviewDone = true; renderReview(); }
   $('reviewSkip').addEventListener('click', goNext);
   $('reviewNext').addEventListener('click', goNext);
+}
+
+// ─── Listening Practice ───
+let listeningMode = 'dictation';
+let listeningExercise = null;
+let listeningAnswered = false;
+
+function getListeningCount() {
+  const today = new Date().toISOString().slice(0, 10);
+  const stored = JSON.parse(localStorage.getItem('listeningCount') || '{}');
+  return stored[today] || 0;
+}
+function incrementListeningCount() {
+  const today = new Date().toISOString().slice(0, 10);
+  const stored = JSON.parse(localStorage.getItem('listeningCount') || '{}');
+  stored[today] = (stored[today] || 0) + 1;
+  localStorage.setItem('listeningCount', JSON.stringify(stored));
+}
+
+function speakListening(text, btn, rate) {
+  speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = 'en-US';
+  utter.rate = rate || 0.9;
+  const enVoices = getEnglishVoices();
+  const isRandom = localStorage.getItem('voiceRandom') === 'true';
+  if (isRandom && enVoices.length > 0) {
+    utter.voice = enVoices[Math.floor(Math.random() * enVoices.length)];
+  } else {
+    const savedVoice = localStorage.getItem('voicePreference');
+    const match = savedVoice && enVoices.find(v => v.name === savedVoice);
+    if (match) { utter.voice = match; }
+    else {
+      const preferred = enVoices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || enVoices[0];
+      if (preferred) utter.voice = preferred;
+    }
+  }
+  if (btn) {
+    btn.classList.add('speaking');
+    utter.onend = () => btn.classList.remove('speaking');
+    utter.onerror = () => btn.classList.remove('speaking');
+  }
+  speechSynthesis.speak(utter);
+}
+
+function getListeningSpeed() {
+  const sel = document.querySelector('.listening-speed select');
+  return sel ? parseFloat(sel.value) : 0.9;
+}
+
+function renderListening() {
+  const panel = $('panelListening');
+  const count = getListeningCount();
+
+  panel.innerHTML = `
+    <div style="padding:20px 0 8px;">
+      <div style="text-align:center;padding:0 16px 12px;">
+        <h2 style="font-size:18px;font-weight:600;margin-bottom:4px;">リスニング練習</h2>
+        <p style="font-size:13px;color:var(--text-secondary);">聞いて、答えて、耳を鍛えよう</p>
+      </div>
+      <div class="listening-modes">
+        <button class="listening-mode-btn ${listeningMode === 'dictation' ? 'active' : ''}" data-mode="dictation">
+          <span class="mode-icon">✍️</span>ディクテーション
+        </button>
+        <button class="listening-mode-btn ${listeningMode === 'gapfill' ? 'active' : ''}" data-mode="gapfill">
+          <span class="mode-icon">📝</span>穴埋め
+        </button>
+        <button class="listening-mode-btn ${listeningMode === 'comprehension' ? 'active' : ''}" data-mode="comprehension">
+          <span class="mode-icon">🧠</span>内容理解
+        </button>
+      </div>
+      <button class="listening-generate" id="listeningGenerate">問題を出す</button>
+      <div id="listeningExerciseArea"></div>
+      <div class="listening-stats">今日のリスニング: ${count}問</div>
+    </div>
+  `;
+
+  panel.querySelectorAll('.listening-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      listeningMode = btn.dataset.mode;
+      listeningExercise = null;
+      listeningAnswered = false;
+      renderListening();
+    });
+  });
+
+  $('listeningGenerate').addEventListener('click', generateListeningExercise);
+
+  if (listeningExercise) {
+    renderListeningExercise();
+  }
+}
+
+async function generateListeningExercise() {
+  const btn = $('listeningGenerate');
+  btn.disabled = true;
+  btn.textContent = '生成中...';
+  listeningAnswered = false;
+
+  try {
+    const data = await api('/api/listening', { type: listeningMode });
+    listeningExercise = data.exercise;
+    renderListeningExercise();
+  } catch (e) {
+    showToast('問題の生成に失敗しました');
+  }
+
+  btn.disabled = false;
+  btn.textContent = '問題を出す';
+}
+
+function renderListeningExercise() {
+  const area = $('listeningExerciseArea');
+  if (!area || !listeningExercise) return;
+  const ex = listeningExercise;
+  const textToSpeak = ex.type === 'comprehension' ? ex.passage : (ex.type === 'gapfill' ? ex.fullSentence : ex.sentence);
+
+  let answerHTML = '';
+  if (ex.type === 'dictation') {
+    answerHTML = `
+      <div class="listening-answer-area">
+        <input type="text" class="listening-answer-input" id="listeningDictInput" placeholder="聞こえた英語を入力..." autocomplete="off">
+        <button class="listening-check-btn" id="listeningCheck">チェック</button>
+      </div>
+    `;
+  } else if (ex.type === 'gapfill') {
+    const parts = ex.gapped.split('____');
+    let gappedHTML = '';
+    parts.forEach((part, i) => {
+      gappedHTML += escHtml(part);
+      if (i < parts.length - 1) {
+        gappedHTML += `<input type="text" class="gap-input" data-idx="${i}" placeholder="..." autocomplete="off">`;
+      }
+    });
+    answerHTML = `
+      <div class="listening-answer-area">
+        <div class="listening-gapped">${gappedHTML}</div>
+        <button class="listening-check-btn" id="listeningCheck">チェック</button>
+      </div>
+    `;
+  } else if (ex.type === 'comprehension') {
+    const optionsHTML = ex.options.map((opt, i) => `
+      <label class="listening-option" data-idx="${i}">
+        <input type="radio" name="listeningOpt" value="${i}">
+        <span>${escHtml(opt)}</span>
+      </label>
+    `).join('');
+    answerHTML = `
+      <div class="listening-answer-area">
+        <div style="font-size:14px;font-weight:500;color:var(--text);margin-bottom:4px;">${escHtml(ex.question)}</div>
+        <div class="listening-options" id="listeningOptions">${optionsHTML}</div>
+        <button class="listening-check-btn" id="listeningCheck">チェック</button>
+      </div>
+    `;
+  }
+
+  area.innerHTML = `
+    <div class="listening-exercise">
+      <div class="listening-hint">${escHtml(ex.hint)}</div>
+      <div class="listening-play-area">
+        <button class="listening-play-btn" id="listeningPlayBtn" title="再生">▶</button>
+        <button class="listening-replay-btn" id="listeningReplayBtn" title="もう一度再生">🔁</button>
+      </div>
+      <div class="listening-speed">
+        <span>速度:</span>
+        <select id="listeningSpeedSel">
+          <option value="0.7">0.7x</option>
+          <option value="0.9" selected>0.9x</option>
+          <option value="1.0">1.0x</option>
+          <option value="1.2">1.2x</option>
+        </select>
+      </div>
+      ${answerHTML}
+      <div id="listeningFeedback"></div>
+    </div>
+  `;
+
+  // Restore speed preference
+  const savedSpeed = localStorage.getItem('listeningSpeed');
+  if (savedSpeed) {
+    const speedSel = $('listeningSpeedSel');
+    if (speedSel) speedSel.value = savedSpeed;
+  }
+  const speedSel = $('listeningSpeedSel');
+  if (speedSel) {
+    speedSel.addEventListener('change', () => {
+      localStorage.setItem('listeningSpeed', speedSel.value);
+    });
+  }
+
+  // Play / Replay
+  $('listeningPlayBtn').addEventListener('click', () => {
+    speakListening(textToSpeak, $('listeningPlayBtn'), getListeningSpeed());
+  });
+  $('listeningReplayBtn').addEventListener('click', () => {
+    speakListening(textToSpeak, $('listeningReplayBtn'), getListeningSpeed());
+  });
+
+  // Option selection
+  if (ex.type === 'comprehension') {
+    document.querySelectorAll('.listening-option').forEach(opt => {
+      opt.addEventListener('click', () => {
+        document.querySelectorAll('.listening-option').forEach(o => o.classList.remove('selected'));
+        opt.classList.add('selected');
+        opt.querySelector('input').checked = true;
+      });
+    });
+  }
+
+  // Check answer
+  if (!listeningAnswered) {
+    $('listeningCheck').addEventListener('click', checkListeningAnswer);
+    // Enter key for dictation
+    if (ex.type === 'dictation') {
+      $('listeningDictInput').addEventListener('keydown', e => {
+        if (e.key === 'Enter') checkListeningAnswer();
+      });
+    }
+  }
+
+  if (listeningAnswered) {
+    showListeningResult();
+  }
+}
+
+async function checkListeningAnswer() {
+  const ex = listeningExercise;
+  if (!ex || listeningAnswered) return;
+  const fb = $('listeningFeedback');
+
+  if (ex.type === 'dictation') {
+    const userAnswer = ($('listeningDictInput') || {}).value || '';
+    if (!userAnswer.trim()) return;
+    try {
+      const res = await api('/api/listening-check', {
+        type: 'dictation', userAnswer, correctAnswer: ex.sentence
+      });
+      listeningAnswered = true;
+      incrementListeningCount();
+      if (res.correct) {
+        fb.innerHTML = `
+          <div class="listening-feedback good">正解！ ${res.similarity}% 一致</div>
+          <div class="listening-result"><span class="correct-text">${escHtml(ex.sentence)}</span></div>
+          <button class="listening-next" id="listeningNext">次の問題</button>
+        `;
+      } else {
+        fb.innerHTML = `
+          <div class="listening-feedback bad">惜しい！ ${res.similarity}% 一致 — もう少し！</div>
+          <div class="listening-result">正解: <span class="correct-text">${escHtml(ex.sentence)}</span></div>
+          <button class="listening-next" id="listeningNext">次の問題</button>
+        `;
+      }
+      $('listeningCheck').disabled = true;
+      $('listeningNext').addEventListener('click', () => { listeningExercise = null; listeningAnswered = false; generateListeningExercise(); });
+      updateListeningStats();
+    } catch (e) {
+      showToast('チェックに失敗しました');
+    }
+  } else if (ex.type === 'gapfill') {
+    const inputs = document.querySelectorAll('.gap-input');
+    const userAnswers = Array.from(inputs).map(inp => inp.value);
+    if (userAnswers.some(a => !a.trim())) return;
+    try {
+      const res = await api('/api/listening-check', {
+        type: 'gapfill', userAnswer: userAnswers, correctAnswer: ex.answers
+      });
+      listeningAnswered = true;
+      incrementListeningCount();
+      res.results.forEach((r, i) => {
+        inputs[i].classList.add(r.correct ? 'correct' : 'incorrect');
+        inputs[i].disabled = true;
+      });
+      if (res.correct) {
+        fb.innerHTML = `
+          <div class="listening-feedback good">全問正解！</div>
+          <div class="listening-result"><span class="correct-text">${escHtml(ex.fullSentence)}</span></div>
+          <button class="listening-next" id="listeningNext">次の問題</button>
+        `;
+      } else {
+        const corrections = res.results.filter(r => !r.correct).map(r => `${r.userAnswer} → ${r.correctAnswer}`).join(', ');
+        fb.innerHTML = `
+          <div class="listening-feedback bad">惜しい！ 修正: ${escHtml(corrections)}</div>
+          <div class="listening-result"><span class="correct-text">${escHtml(ex.fullSentence)}</span></div>
+          <button class="listening-next" id="listeningNext">次の問題</button>
+        `;
+      }
+      $('listeningCheck').disabled = true;
+      $('listeningNext').addEventListener('click', () => { listeningExercise = null; listeningAnswered = false; generateListeningExercise(); });
+      updateListeningStats();
+    } catch (e) {
+      showToast('チェックに失敗しました');
+    }
+  } else if (ex.type === 'comprehension') {
+    const selected = document.querySelector('input[name="listeningOpt"]:checked');
+    if (!selected) return;
+    const userIdx = parseInt(selected.value);
+    try {
+      const res = await api('/api/listening-check', {
+        type: 'comprehension', userAnswer: userIdx, correctAnswer: ex.correctIndex
+      });
+      listeningAnswered = true;
+      incrementListeningCount();
+      document.querySelectorAll('.listening-option').forEach((opt, i) => {
+        if (i === ex.correctIndex) opt.classList.add('correct-answer');
+        else if (i === userIdx && !res.correct) opt.classList.add('wrong-answer');
+        opt.style.pointerEvents = 'none';
+      });
+      if (res.correct) {
+        fb.innerHTML = `
+          <div class="listening-feedback good">正解！</div>
+          <div class="listening-result"><div style="margin-bottom:4px;font-size:12px;color:var(--text-tertiary);">パッセージ:</div><span class="correct-text">${escHtml(ex.passage)}</span></div>
+          <button class="listening-next" id="listeningNext">次の問題</button>
+        `;
+      } else {
+        fb.innerHTML = `
+          <div class="listening-feedback bad">不正解 — 正解は「${escHtml(ex.options[ex.correctIndex])}」</div>
+          <div class="listening-result"><div style="margin-bottom:4px;font-size:12px;color:var(--text-tertiary);">パッセージ:</div><span class="correct-text">${escHtml(ex.passage)}</span></div>
+          <button class="listening-next" id="listeningNext">次の問題</button>
+        `;
+      }
+      $('listeningCheck').disabled = true;
+      $('listeningNext').addEventListener('click', () => { listeningExercise = null; listeningAnswered = false; generateListeningExercise(); });
+      updateListeningStats();
+    } catch (e) {
+      showToast('チェックに失敗しました');
+    }
+  }
+}
+
+function updateListeningStats() {
+  const statsEl = document.querySelector('.listening-stats');
+  if (statsEl) statsEl.textContent = `今日のリスニング: ${getListeningCount()}問`;
 }
 
 // ─── Setup & Settings ───

@@ -378,6 +378,123 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+// ─── Listening Practice ───
+
+function buildListeningPrompt(type, stage) {
+  const levelGuide = stage <= 2
+    ? 'CEFR A2: Use simple everyday sentences with basic vocabulary from Oxford 3000 A2 level. Short, concrete topics (food, weather, daily life, shopping).'
+    : stage === 3
+    ? 'CEFR B1-: Use slightly longer sentences about work, travel, or daily routines. Oxford 3000 B1 vocabulary.'
+    : 'CEFR B1+/B2: Use complex sentences with abstract topics, longer passages. Oxford 3000 B1-B2 vocabulary.';
+
+  const typeInstructions = {
+    dictation: `Generate a single English sentence for a dictation exercise.
+The sentence should be natural and useful for a language learner.
+Return JSON only:
+{
+  "type": "dictation",
+  "sentence": "The full English sentence to dictate",
+  "hint": "Japanese hint about the topic (1 short sentence)"
+}`,
+    gapfill: `Generate a gap-fill exercise. Create a natural English sentence, then make a version with 2-3 key words replaced by ____.
+Return JSON only:
+{
+  "type": "gapfill",
+  "fullSentence": "The complete sentence with all words",
+  "gapped": "The sentence with ____ replacing key words",
+  "answers": ["word1", "word2"],
+  "hint": "Japanese context hint (1 short sentence)"
+}
+The answers array must contain the missing words in order. Use ____ (4 underscores) for each blank.`,
+    comprehension: `Generate a listening comprehension exercise. Write a short English passage (2-4 sentences), then a question about it with 3 answer options.
+Return JSON only:
+{
+  "type": "comprehension",
+  "passage": "A short English passage (2-4 sentences)",
+  "question": "A question about the passage in English",
+  "options": ["Option A", "Option B", "Option C"],
+  "correctIndex": 0,
+  "hint": "Japanese translation of the question"
+}
+correctIndex is 0-based. Only one option should be clearly correct based on the passage.`
+  };
+
+  return `You are an English listening exercise generator for a Japanese learner.
+${levelGuide}
+
+${typeInstructions[type]}
+
+Generate varied, interesting content. Do not repeat common textbook examples. Return valid JSON only, no other text.`;
+}
+
+app.post('/api/listening', async (req, res) => {
+  const { type } = req.body;
+  if (!['dictation', 'gapfill', 'comprehension'].includes(type)) {
+    return res.status(400).json({ error: 'invalid type' });
+  }
+
+  const data = loadData();
+  const stage = data.stageOverride || data.stage;
+
+  try {
+    const response = await getClient().messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 300,
+      messages: [{ role: 'user', content: buildListeningPrompt(type, stage) }]
+    });
+
+    const raw = response.content[0].text.trim();
+    let parsed;
+    try {
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      parsed = JSON.parse(jsonMatch ? jsonMatch[0] : raw);
+    } catch (e) {
+      return res.status(500).json({ error: 'Failed to parse exercise' });
+    }
+
+    res.json({ exercise: parsed });
+  } catch (e) {
+    console.error('Listening API error:', e.message);
+    res.status(500).json({ error: 'AI request failed' });
+  }
+});
+
+app.post('/api/listening-check', (req, res) => {
+  const { type, userAnswer, correctAnswer } = req.body;
+
+  if (type === 'dictation') {
+    const normalize = s => s.toLowerCase().trim().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
+    const ua = normalize(userAnswer || '');
+    const ca = normalize(correctAnswer || '');
+    const uaWords = ua.split(' ');
+    const caWords = ca.split(' ');
+    let matches = 0;
+    caWords.forEach((w, i) => { if (uaWords[i] === w) matches++; });
+    const similarity = caWords.length > 0 ? Math.round((matches / caWords.length) * 100) : 0;
+    const correct = similarity >= 80;
+    return res.json({ correct, similarity, normalized: { user: ua, answer: ca } });
+  }
+
+  if (type === 'gapfill') {
+    const answers = correctAnswer || [];
+    const userAnswers = userAnswer || [];
+    const results = answers.map((a, i) => {
+      const ua = (userAnswers[i] || '').trim().toLowerCase();
+      const ca = a.trim().toLowerCase();
+      return { correct: ua === ca, userAnswer: userAnswers[i] || '', correctAnswer: a };
+    });
+    const allCorrect = results.every(r => r.correct);
+    return res.json({ correct: allCorrect, results });
+  }
+
+  if (type === 'comprehension') {
+    const correct = parseInt(userAnswer) === parseInt(correctAnswer);
+    return res.json({ correct });
+  }
+
+  res.status(400).json({ error: 'invalid type' });
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   const url = `http://localhost:${PORT}`;
