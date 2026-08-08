@@ -1,3 +1,12 @@
+process.on('uncaughtException', (err) => {
+  console.error('エラーが発生しました:', err.message);
+  if (process.pkg) {
+    console.log('\nEnterキーを押して終了...');
+    process.stdin.resume();
+    process.stdin.once('data', () => process.exit(1));
+  }
+});
+
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('fs');
@@ -360,9 +369,28 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   const url = `http://localhost:${PORT}`;
   console.log(`Hiro Speaking Practice running on ${url}`);
+  console.log('ブラウザで上のURLを開いてください。');
+  console.log('終了するにはこのウィンドウを閉じるか Ctrl+C を押してください。');
 
   if (process.env.NO_OPEN) return;
   const { exec } = require('child_process');
-  const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
-  exec(`${cmd} ${url}`);
+  if (process.platform === 'win32') {
+    exec(`start "" "${url}"`);
+  } else if (process.platform === 'darwin') {
+    exec(`open "${url}"`);
+  } else {
+    exec(`xdg-open "${url}"`);
+  }
+}).on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`ポート ${PORT} は既に使用されています。`);
+    console.error('他のアプリを閉じるか、別のポートを指定してください。');
+  } else {
+    console.error('サーバー起動エラー:', err.message);
+  }
+  if (process.pkg) {
+    console.log('\nEnterキーを押して終了...');
+    process.stdin.resume();
+    process.stdin.once('data', () => process.exit(1));
+  }
 });
