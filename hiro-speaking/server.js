@@ -484,6 +484,74 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+// ─── Google Cloud TTS ───
+const GOOGLE_TTS_VOICES = [
+  { name: 'en-US-Wavenet-A', gender: 'MALE', accent: 'US' },
+  { name: 'en-US-Wavenet-C', gender: 'FEMALE', accent: 'US' },
+  { name: 'en-US-Wavenet-D', gender: 'MALE', accent: 'US' },
+  { name: 'en-US-Wavenet-F', gender: 'FEMALE', accent: 'US' },
+  { name: 'en-US-Neural2-A', gender: 'MALE', accent: 'US' },
+  { name: 'en-US-Neural2-C', gender: 'FEMALE', accent: 'US' },
+  { name: 'en-US-Neural2-D', gender: 'MALE', accent: 'US' },
+  { name: 'en-US-Neural2-F', gender: 'FEMALE', accent: 'US' },
+  { name: 'en-GB-Wavenet-A', gender: 'FEMALE', accent: 'UK' },
+  { name: 'en-GB-Wavenet-B', gender: 'MALE', accent: 'UK' },
+  { name: 'en-GB-Wavenet-D', gender: 'MALE', accent: 'UK' },
+  { name: 'en-GB-Neural2-A', gender: 'FEMALE', accent: 'UK' },
+  { name: 'en-GB-Neural2-B', gender: 'MALE', accent: 'UK' },
+  { name: 'en-GB-Neural2-D', gender: 'MALE', accent: 'UK' },
+  { name: 'en-AU-Wavenet-A', gender: 'FEMALE', accent: 'AU' },
+  { name: 'en-AU-Wavenet-B', gender: 'MALE', accent: 'AU' },
+  { name: 'en-AU-Neural2-A', gender: 'FEMALE', accent: 'AU' },
+  { name: 'en-AU-Neural2-B', gender: 'MALE', accent: 'AU' },
+  { name: 'en-IN-Wavenet-A', gender: 'FEMALE', accent: 'IN' },
+  { name: 'en-IN-Wavenet-B', gender: 'MALE', accent: 'IN' },
+];
+
+let lastTtsVoice = null;
+
+app.get('/api/tts-status', (req, res) => {
+  res.json({ available: !!process.env.GOOGLE_TTS_API_KEY });
+});
+
+app.post('/api/tts', async (req, res) => {
+  const apiKey = process.env.GOOGLE_TTS_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: 'Google TTS not configured' });
+
+  const { text, speed } = req.body;
+  if (!text) return res.status(400).json({ error: 'no text' });
+
+  const candidates = GOOGLE_TTS_VOICES.filter(v => v !== lastTtsVoice);
+  const voice = candidates[Math.floor(Math.random() * candidates.length)];
+  lastTtsVoice = voice;
+
+  const langCode = voice.name.split('-').slice(0, 2).join('-');
+
+  try {
+    const ttsRes = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: { text },
+        voice: { languageCode: langCode, name: voice.name, ssmlGender: voice.gender },
+        audioConfig: { audioEncoding: 'MP3', speakingRate: speed || 1.0, pitch: 0 }
+      })
+    });
+
+    if (!ttsRes.ok) {
+      const err = await ttsRes.text();
+      console.error('Google TTS error:', err);
+      return res.status(500).json({ error: 'TTS failed' });
+    }
+
+    const data = await ttsRes.json();
+    res.json({ audio: data.audioContent, voice: voice.name, accent: voice.accent });
+  } catch (e) {
+    console.error('Google TTS error:', e.message);
+    res.status(500).json({ error: 'TTS request failed' });
+  }
+});
+
 // ─── Listening Practice ───
 
 function buildListeningPrompt(type, stage) {

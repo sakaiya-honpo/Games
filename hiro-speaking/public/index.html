@@ -427,6 +427,7 @@ input, textarea { font-family: inherit; font-size: inherit; }
 }
 .listening-play-btn:hover { opacity: 0.9; transform: scale(1.05); }
 .listening-play-btn.speaking { background: var(--gold); }
+.listening-voice-tag { font-size: 11px; color: var(--text-tertiary); padding: 2px 8px; background: var(--surface); border-radius: 10px; min-width: 0; }
 .listening-replay-btn {
   width: 40px; height: 40px; border-radius: 50%; background: var(--surface); color: var(--text-secondary);
   display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all 0.15s;
@@ -1234,8 +1235,36 @@ function incrementListeningCount() {
 }
 
 let lastListeningVoice = null;
-function speakListening(text, btn, rate) {
+let googleTtsAvailable = false;
+let currentAudio = null;
+
+async function checkGoogleTts() {
+  try {
+    const res = await api('/api/tts-status');
+    googleTtsAvailable = res.available;
+  } catch (e) { googleTtsAvailable = false; }
+}
+
+async function speakListening(text, btn, rate) {
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
   speechSynthesis.cancel();
+
+  if (btn) btn.classList.add('speaking');
+
+  if (googleTtsAvailable) {
+    try {
+      const res = await api('/api/tts', { text, speed: rate || 0.9 });
+      const audio = new Audio('data:audio/mp3;base64,' + res.audio);
+      currentAudio = audio;
+      audio.onended = () => { if (btn) btn.classList.remove('speaking'); currentAudio = null; };
+      audio.onerror = () => { if (btn) btn.classList.remove('speaking'); currentAudio = null; };
+      audio.play();
+      const tag = document.getElementById('listeningVoiceTag');
+      if (tag && res.accent) tag.textContent = `🌍 ${res.accent}`;
+      return;
+    } catch (e) {}
+  }
+
   const utter = new SpeechSynthesisUtterance(text);
   utter.lang = 'en-US';
   utter.rate = rate || 0.9;
@@ -1249,7 +1278,6 @@ function speakListening(text, btn, rate) {
     utter.voice = enVoices[0];
   }
   if (btn) {
-    btn.classList.add('speaking');
     utter.onend = () => btn.classList.remove('speaking');
     utter.onerror = () => btn.classList.remove('speaking');
   }
@@ -1373,6 +1401,7 @@ function renderListeningExercise() {
       <div class="listening-play-area">
         <button class="listening-play-btn" id="listeningPlayBtn" title="再生">▶</button>
         <button class="listening-replay-btn" id="listeningReplayBtn" title="もう一度再生">🔁</button>
+        <span class="listening-voice-tag" id="listeningVoiceTag"></span>
       </div>
       <div class="listening-speed">
         <span>速度:</span>
@@ -1662,6 +1691,7 @@ async function init() {
     $('setupScreen').style.display = 'flex';
   }
   await loadAppData();
+  checkGoogleTts();
 }
 init();
 
