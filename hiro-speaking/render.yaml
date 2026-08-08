@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: hiro-speaking
+    runtime: node
+    buildCommand: npm install
+    startCommand: NO_OPEN=1 node server.js
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
+      - key: GOOGLE_TTS_API_KEY
+        sync: false
+      - key: PORT
+        value: 3000
+      - key: NO_OPEN
+        value: "1"

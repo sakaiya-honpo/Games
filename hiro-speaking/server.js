@@ -1,0 +1,766 @@
+process.on('uncaughtException', (err) => {
+  console.error('エラーが発生しました:', err.message);
+  if (process.pkg) {
+    console.log('\nEnterキーを押して終了...');
+    process.stdin.resume();
+    process.stdin.once('data', () => process.exit(1));
+  }
+});
+
+const express = require('express');
+const Anthropic = require('@anthropic-ai/sdk');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+
+const app = express();
+app.use(express.json());
+
+// ─── Simple password auth ───
+const authTokens = new Set();
+
+function parseCookies(header) {
+  const cookies = {};
+  if (!header) return cookies;
+  header.split(';').forEach(c => {
+    const [k, ...v] = c.split('=');
+    cookies[k.trim()] = v.join('=').trim();
+  });
+  return cookies;
+}
+
+app.post('/api/auth', (req, res) => {
+  const pw = process.env.APP_PASSWORD;
+  if (!pw) return res.json({ ok: true });
+  if (req.body.password !== pw) return res.status(401).json({ error: 'パスワードが違います' });
+  const token = crypto.randomBytes(32).toString('hex');
+  authTokens.add(token);
+  res.setHeader('Set-Cookie', `auth=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800`);
+  res.json({ ok: true });
+});
+
+app.get('/api/auth-check', (req, res) => {
+  const pw = process.env.APP_PASSWORD;
+  if (!pw) return res.json({ required: false });
+  const cookies = parseCookies(req.headers.cookie);
+  const authed = cookies.auth && authTokens.has(cookies.auth);
+  res.json({ required: true, authenticated: !!authed });
+});
+
+app.use('/api', (req, res, next) => {
+  if (req.path === '/auth' || req.path === '/auth-check') return next();
+  const pw = process.env.APP_PASSWORD;
+  if (!pw) return next();
+  const cookies = parseCookies(req.headers.cookie);
+  if (cookies.auth && authTokens.has(cookies.auth)) return next();
+  res.status(401).json({ error: 'ログインが必要です' });
+});
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+const EXE_DIR = process.pkg ? path.dirname(process.execPath) : __dirname;
+const ENV_FILE = path.join(EXE_DIR, '.env');
+const DATA_FILE = path.join(EXE_DIR, 'data.json');
+
+// ─── News RSS ───
+const NEWS_FEEDS_BY_STAGE = {
+  1: [
+    { url: 'https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml', source: 'BBC', category: 'entertainment' },
+    { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Sports.xml', source: 'NYT', category: 'sports' },
+    { url: 'https://www3.nhk.or.jp/nhkworld/en/news/feeds/', source: 'NHK', category: 'japan' },
+  ],
+  2: [
+    { url: 'https://feeds.bbci.co.uk/news/science_and_environment/rss.xml', source: 'BBC', category: 'science' },
+    { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Travel.xml', source: 'NYT', category: 'travel' },
+    { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Health.xml', source: 'NYT', category: 'health' },
+    { url: 'https://www3.nhk.or.jp/nhkworld/en/news/feeds/', source: 'NHK', category: 'japan' },
+  ],
+  3: [
+    { url: 'https://feeds.bbci.co.uk/news/technology/rss.xml', source: 'BBC', category: 'tech' },
+    { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml', source: 'NYT', category: 'tech' },
+    { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Business.xml', source: 'NYT', category: 'business' },
+    { url: 'https://www3.nhk.or.jp/nhkworld/en/news/feeds/', source: 'NHK', category: 'japan' },
+    { url: 'https://japantoday.com/feed', source: 'JapanToday', category: 'japan' },
+  ],
+  4: [
+    { url: 'https://feeds.bbci.co.uk/news/world/rss.xml', source: 'BBC', category: 'world' },
+    { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml', source: 'NYT', category: 'world' },
+    { url: 'https://www3.nhk.or.jp/nhkworld/en/news/feeds/', source: 'NHK', category: 'japan' },
+    { url: 'https://japantoday.com/feed', source: 'JapanToday', category: 'japan' },
+  ],
+  5: [
+    { url: 'https://feeds.bbci.co.uk/news/world/rss.xml', source: 'BBC', category: 'world' },
+    { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml', source: 'NYT', category: 'world' },
+    { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Opinion.xml', source: 'NYT', category: 'opinion' },
+    { url: 'https://www3.nhk.or.jp/nhkworld/en/news/feeds/', source: 'NHK', category: 'japan' },
+    { url: 'https://japantoday.com/feed', source: 'JapanToday', category: 'japan' },
+  ],
+};
+
+const CATEGORY_LABELS = {
+  entertainment: '🎬 エンタメ',
+  sports: '⚽ スポーツ',
+  science: '🔬 科学',
+  travel: '✈️ 旅行',
+  health: '🏥 健康',
+  tech: '💻 テクノロジー',
+  business: '💼 ビジネス',
+  world: '🌍 国際',
+  opinion: '💭 オピニオン',
+  japan: '🇯🇵 日本のニュース',
+};
+
+let cachedNews = {};
+
+async function fetchNews(stage) {
+  const now = Date.now();
+  const cacheKey = String(stage);
+  const cached = cachedNews[cacheKey];
+  if (cached && cached.items.length > 0 && now - cached.fetchedAt < 3600000) return cached.items;
+
+  const feeds = NEWS_FEEDS_BY_STAGE[stage] || NEWS_FEEDS_BY_STAGE[4];
+  const items = [];
+  for (const feed of feeds) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(feed.url, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!res.ok) continue;
+      const xml = await res.text();
+      const itemBlocks = xml.split('<item>').slice(1, 4);
+      for (const block of itemBlocks) {
+        const tMatch = block.match(/<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/);
+        if (tMatch) {
+          const title = tMatch[1].trim().replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+          if (title) items.push({ title, source: feed.source, category: feed.category });
+        }
+      }
+    } catch (e) {}
+  }
+  if (items.length > 0) {
+    cachedNews[cacheKey] = { items, fetchedAt: now };
+  }
+  return items;
+}
+
+function loadEnv() {
+  try {
+    if (fs.existsSync(ENV_FILE)) {
+      const lines = fs.readFileSync(ENV_FILE, 'utf8').split('\n');
+      for (const line of lines) {
+        const match = line.match(/^([^#=]+)=(.*)$/);
+        if (match) process.env[match[1].trim()] = match[2].trim();
+      }
+    }
+  } catch (e) {}
+}
+loadEnv();
+
+function getClient() {
+  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+}
+
+const STAGE_NAMES = { 1: 'A2', 2: 'A2+', 3: 'B1-', 4: 'B1+', 5: 'B2' };
+const STAGE_THRESHOLDS = [
+  null, null,
+  { phrases: 50, correctionRate: 0.6, avgWords: 0 },
+  { phrases: 120, correctionRate: 0.5, avgWords: 6 },
+  { phrases: 200, correctionRate: 0.4, avgWords: 8 },
+  { phrases: 300, correctionRate: 0.3, avgWords: 10 }
+];
+
+const TOPICS = {
+  food:       { name: '食事', keywords: '食事、レストラン、料理、食べ物、飲み物' },
+  weather:    { name: '天気', keywords: '天気、季節、気候、気温' },
+  daily:      { name: '日常', keywords: '日課、日常生活、最近あったこと' },
+  shopping:   { name: '買い物', keywords: '買い物、店、値段' },
+  hobbies:    { name: '趣味', keywords: '趣味、好きなこと、自由時間' },
+  weekend:    { name: '週末', keywords: '週末の予定、休日の過ごし方' },
+  travel:     { name: '旅行', keywords: '旅行、観光、行きたい場所' },
+  work:       { name: '仕事', keywords: '仕事、職場、キャリア' },
+  future:     { name: '将来', keywords: '将来の計画、夢、目標' },
+  technology: { name: 'テクノロジー', keywords: 'AI、テクノロジー、インターネット' },
+  environment:{ name: '環境', keywords: '環境問題、エコ、持続可能性' },
+  education:  { name: '教育', keywords: '教育、学校、学び方' },
+  culture:    { name: '文化', keywords: '文化の違い、異文化理解、海外生活' },
+  media:      { name: 'メディア', keywords: 'SNS、メディア、ニュース、情報' },
+  society:    { name: '社会', keywords: '社会問題、政策、公共' }
+};
+
+const TOPIC_STAGES = {
+  1: ['food', 'weather', 'daily', 'shopping'],
+  2: ['hobbies', 'weekend', 'travel'],
+  3: ['work', 'future'],
+  4: ['technology', 'environment', 'education'],
+  5: ['culture', 'media', 'society']
+};
+
+function getAvailableTopicIds(stage) {
+  const ids = [];
+  for (let s = 1; s <= stage; s++) {
+    if (TOPIC_STAGES[s]) ids.push(...TOPIC_STAGES[s]);
+  }
+  return ids;
+}
+
+// ─── Data persistence ───
+function loadData() {
+  try {
+    if (fs.existsSync(DATA_FILE)) return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  } catch (e) {}
+  return {
+    phrases: [],
+    stage: 1,
+    stageOverride: null,
+    recentUtterances: [],
+    totalConversations: 0,
+    practiceDays: [],
+    stageHistory: [{ stage: 1, reachedAt: Date.now() }]
+  };
+}
+
+function saveData(data) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+}
+
+const PERSONALITIES = {
+  default: {
+    name: 'フレンドリー',
+    prompt: 'あなたはフレンドリーな英会話の練習相手です。',
+    startPrompt: 'あなたはフレンドリーな英会話の練習相手です。',
+  },
+  challenger: {
+    name: 'ツッコミ役',
+    prompt: `あなたは親しみやすいが、ユーザーの意見に簡単には同意しない英会話の練習相手です。
+【性格の特徴】
+- ユーザーの意見に対して「本当にそう？」「別の見方もあるよ」と軽くツッコむ
+- 反対意見や別の視点を短く提示して、ユーザーに考え直させる
+- 攻撃的ではなく、友達同士の議論のような雰囲気
+- "Hmm, but don't you think..." / "I see your point, but..." のような表現を使う
+- followUpでは、ユーザーの主張を掘り下げる質問を投げる`,
+    startPrompt: 'あなたは親しみやすいが、相手の意見に簡単には同意しない英会話の練習相手です。軽くツッコミを入れるスタイルで会話します。',
+  },
+  curious: {
+    name: '質問魔',
+    prompt: `あなたは好奇心旺盛で、ユーザーの話を深掘りする英会話の練習相手です。
+【性格の特徴】
+- ユーザーの発言に対して「へぇ、もっと詳しく！」「具体的には？」と掘り下げる
+- 表面的な回答で終わらせず、理由・感情・具体例を引き出す
+- "That's interesting! Can you tell me more about...?" / "What exactly do you mean by...?" のような表現を使う
+- ユーザーが短い答えを返しても、そこから話を広げる
+- followUpでは、ユーザーの答えのどこかを拾って深掘りする質問を投げる`,
+    startPrompt: 'あなたは好奇心旺盛で、相手の話をどんどん深掘りする英会話の練習相手です。詳細や理由を積極的に聞き出します。',
+  },
+};
+
+// ─── Conversation history (in-memory, per topic session) ───
+let conversationMessages = [];
+let currentPersonality = 'default';
+
+// ─── Stage-specific system prompt ───
+function buildSystemPrompt(data, topicId, stageOverride) {
+  const stage = stageOverride || data.stage;
+  const topicInfo = TOPICS[topicId];
+
+  const stageInstructions = {
+    1: `【Stage 1（A2）の指示】
+- 質問は事実質問のみ（What / Where / When / Who）
+- 話題：食事、天気、家族、買い物、日課
+- 語彙：Oxford 3000 A2レベル
+- 修正対象：冠詞、前置詞、基本時制
+- 紹介するフレーズ：短い定型表現（I had a... / I went to... / It was...）
+- 1ターンに質問は1つだけ`,
+    2: `【Stage 2（A2+）の指示】
+- 質問は事実質問＋軽い理由（Why did you...? / Do you like...?）
+- 話題：食事、天気、日常、買い物＋趣味、週末、旅行の思い出
+- 語彙：Oxford 3000 A2〜B1（A2中心）
+- 修正対象：冠詞、前置詞、基本時制＋語順、三単現、不規則過去形
+- 紹介するフレーズ：少し長い表現（I usually... / I'm thinking about... / It depends on...）`,
+    3: `【Stage 3（B1-）の指示】
+- 質問は理由・比較（Why do you think...? / Which do you prefer...?）
+- 話題：＋仕事、将来の計画、経験したこと
+- 語彙：Oxford 3000 B1中心
+- 修正対象：＋接続詞の使い方、時制の一貫性
+- 紹介するフレーズ：接続表現（On the other hand... / The reason is... / I've never...）`,
+    4: `【Stage 4（B1+）の指示】
+- 質問は意見・仮定（What would you do if...? / Do you agree that...?）
+- 話題：＋社会的な話題（環境、テクノロジー、教育）
+- 語彙：Oxford 3000 B1〜B2（B1中心）
+- 修正対象：＋仮定法、関係詞、受動態
+- 紹介するフレーズ：意見表現（I'd say that... / It seems to me... / That's a good point, but...）`,
+    5: `【Stage 5（B2）の指示】
+- 質問は議論・分析（How has X changed...? / What are the advantages and disadvantages?）
+- 話題：抽象的なテーマ（文化の違い、メディアの影響、公共政策）
+- 語彙：Oxford 3000 B2
+- 修正対象：全レベル＋より洗練された表現への言い換え
+- 紹介するフレーズ：議論表現（From my perspective... / Having said that... / It's worth considering...）`
+  };
+
+  const p = PERSONALITIES[currentPersonality] || PERSONALITIES.default;
+  return `${p.prompt}
+ユーザーはCEFR ${STAGE_NAMES[stage]}レベルの日本語話者で、ドイツ在住です。
+
+【参考語彙リスト】Oxford 3000 Word List（約3870語）を基準語彙として使用してください。ステージに応じたレベルの語彙を選んでください。リストは /oxford3000.txt で参照可能です。
+
+【メソッド：だいじろー式「フレーズの引き出しを増やす」】
+ゼロから文法を組み立てるのではなく、フレーズの塊をたくさん覚えて引き出して投げる練習。
+
+【最重要ルール】
+1. ユーザーの英語が不完全でも、まず「伝わりましたよ」と日本語で肯定する。いきなり修正しない。
+2. その上で「自然な言い方」を1〜3個、具体的なフレーズとして提示する。フレーズは「塊」として覚えられる形で。
+3. なぜその表現が自然かを日本語で短く（1〜2文）説明する。文法用語は最小限。
+4. 会話を途切れさせない。必ず次の質問を英語で1つ投げる。
+5. ユーザーが日本語混じりで答えてもOK。意味を汲み取る。
+6. 長い解説はしない。
+
+【ユーザーのよくあるエラーパターン（特に注意して修正）】
+- 冠詞の脱落（joined summer course → a summer course）
+- toの脱落（I want go → I want to go）
+- 助動詞+過去形（can't went → can't go）
+- there/that混同
+- stuff/staff混同
+- 動詞なし文（I thinking → I am thinking）
+- 否定の形（there is no many → there are not many）
+
+【定着済み（修正不要）】
+- be動詞と一般動詞の否定の区別
+- 助動詞＋原形
+- 基本的な句動詞
+
+【現在のステージ】Stage ${stage}（${STAGE_NAMES[stage]}）
+${stageInstructions[stage]}
+
+【現在の会話トピック】${topicInfo ? topicInfo.name + '（' + topicInfo.keywords + '）' : '今日のニュース（自由な話題）'}
+
+【応答形式】
+必ず以下のJSON形式のみで応答してください。JSON以外のテキストは含めないでください。
+{
+  "affirmation": "伝わったことの確認（日本語で1文）",
+  "corrections": [{"orig": "ユーザーの元の表現", "fixed": "修正後の表現", "note": "修正理由（日本語で短く）"}],
+  "phrases": [{"en": "自然な英語フレーズ", "note": "短い説明（日本語）"}],
+  "point": "ポイント解説（日本語・1〜2文。フレーズの塊として覚えるコツ）",
+  "followUp": "会話を続ける質問（英語で1つ）"
+}
+
+corrections はユーザーの英語に修正が必要な場合のみ。修正不要なら空配列 [] にしてください。
+phrases は1〜3個。ユーザーの発話に関連する自然な表現。
+ユーザーが文法的に正しい自然な英語を使った場合は、affirmationでしっかり褒めて、correctionsは空配列にしてください。`;
+}
+
+function buildStartPrompt(data, topicId, stageOverride) {
+  const stage = stageOverride || data.stage;
+  const topicInfo = TOPICS[topicId];
+
+  const p = PERSONALITIES[currentPersonality] || PERSONALITIES.default;
+  return `${p.startPrompt}
+ユーザーはCEFR ${STAGE_NAMES[stage]}レベルの日本語話者です。
+
+今から「${topicInfo.name}」の話題で会話を始めます。
+
+Stage ${stage}（${STAGE_NAMES[stage]}）に合った質問を英語で1つだけ投げてください。
+${stage <= 2 ? '事実を聞くシンプルな質問（What / Where / When / Who）にしてください。' : ''}
+${stage === 3 ? '理由や比較を聞く質問にしてください。' : ''}
+${stage === 4 ? '意見や仮定を聞く質問にしてください。' : ''}
+${stage === 5 ? '分析や議論を促す質問にしてください。' : ''}
+
+英語の質問文だけを返してください。JSON不要。日本語不要。`;
+}
+
+function buildNewsStartPrompt(data, headline, stageOverride) {
+  const stage = stageOverride || data.stage;
+  const p = PERSONALITIES[currentPersonality] || PERSONALITIES.default;
+  return `${p.startPrompt}
+ユーザーはCEFR ${STAGE_NAMES[stage]}レベルの日本語話者です。
+
+今日のニュースの話題で会話を始めます。
+ニュースの見出し: "${headline || 'today\'s world news'}"
+
+この見出しに関連するStage ${stage}（${STAGE_NAMES[stage]}）に合った質問を英語で1つだけ投げてください。
+${stage <= 2 ? 'シンプルな事実質問にしてください（例: Did you hear about...? What do you think about...?）' : ''}
+${stage >= 3 ? '意見や考えを聞く質問にしてください。' : ''}
+
+英語の質問文だけを返してください。JSON不要。日本語不要。`;
+}
+
+// ─── Stage check ───
+function checkStageUp(data) {
+  if (data.stage >= 5) return false;
+  const next = data.stage + 1;
+  const req = STAGE_THRESHOLDS[next];
+  if (!req) return false;
+
+  const phraseCount = data.phrases.length;
+  const recent = data.recentUtterances;
+  const corrRate = recent.length === 0 ? 1 : recent.filter(u => u.wasCorrected).length / recent.length;
+  const avgWords = recent.length === 0 ? 0 : recent.reduce((a, u) => a + u.wordCount, 0) / recent.length;
+
+  if (phraseCount >= req.phrases && corrRate <= req.correctionRate && (req.avgWords === 0 || avgWords >= req.avgWords)) {
+    data.stage = next;
+    data.stageHistory.push({ stage: next, reachedAt: Date.now() });
+    saveData(data);
+    return true;
+  }
+  return false;
+}
+
+// ─── API Routes ───
+
+app.get('/api/data', (req, res) => {
+  const data = loadData();
+  const availableTopics = getAvailableTopicIds(data.stage).map(id => ({
+    id,
+    name: TOPICS[id].name
+  }));
+  res.json({ ...data, stageOverride: data.stageOverride || null, availableTopics });
+});
+
+app.post('/api/stage-override', (req, res) => {
+  const { stageOverride } = req.body;
+  const data = loadData();
+  data.stageOverride = (typeof stageOverride === 'number' && stageOverride >= 1 && stageOverride <= 5) ? stageOverride : null;
+  saveData(data);
+  res.json({ ok: true, stageOverride: data.stageOverride });
+});
+
+app.post('/api/phrases', (req, res) => {
+  const data = loadData();
+  const { action, phrase, index } = req.body;
+
+  if (action === 'save' && phrase) {
+    if (!data.phrases.some(p => p.en === phrase.en)) {
+      data.phrases.push({ ...phrase, savedAt: Date.now() });
+      saveData(data);
+      const stageUp = checkStageUp(data);
+      return res.json({ ok: true, phraseCount: data.phrases.length, stageUp, stage: data.stage });
+    }
+    return res.json({ ok: true, phraseCount: data.phrases.length, alreadySaved: true });
+  }
+
+  if (action === 'delete' && typeof index === 'number') {
+    data.phrases.splice(index, 1);
+    saveData(data);
+    return res.json({ ok: true, phraseCount: data.phrases.length });
+  }
+
+  res.status(400).json({ error: 'invalid action' });
+});
+
+app.get('/api/news', async (req, res) => {
+  try {
+    const data = loadData();
+    const stage = parseInt(req.query.stage) || data.stageOverride || data.stage;
+    const items = await fetchNews(stage);
+    res.json({ items, categoryLabels: CATEGORY_LABELS });
+  } catch (e) {
+    res.json({ items: [] });
+  }
+});
+
+app.get('/api/personalities', (req, res) => {
+  const list = Object.entries(PERSONALITIES).map(([id, p]) => ({ id, name: p.name }));
+  list.push({ id: 'random', name: 'ランダム' });
+  res.json({ personalities: list, current: currentPersonality });
+});
+
+app.post('/api/start', async (req, res) => {
+  const { topicId, newsHeadline, personality } = req.body;
+  if (topicId !== 'news' && !TOPICS[topicId]) return res.status(400).json({ error: 'invalid topic' });
+
+  if (personality === 'random') {
+    const keys = Object.keys(PERSONALITIES);
+    currentPersonality = keys[Math.floor(Math.random() * keys.length)];
+  } else if (personality && PERSONALITIES[personality]) {
+    currentPersonality = personality;
+  }
+
+  const data = loadData();
+  const so = data.stageOverride || null;
+  conversationMessages = [];
+
+  const prompt = topicId === 'news'
+    ? buildNewsStartPrompt(data, newsHeadline, so)
+    : buildStartPrompt(data, topicId, so);
+
+  try {
+    const response = await getClient().messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 200,
+      messages: [{ role: 'user', content: prompt }]
+    });
+
+    const question = response.content[0].text.trim();
+    conversationMessages = [{ role: 'assistant', content: question }];
+
+    const pInfo = PERSONALITIES[currentPersonality];
+    res.json({ question, stage: data.stage, personality: currentPersonality, personalityName: pInfo ? pInfo.name : '' });
+  } catch (e) {
+    console.error('API error:', e.message);
+    res.status(500).json({ error: 'AI request failed' });
+  }
+});
+
+app.post('/api/chat', async (req, res) => {
+  const { message, topicId } = req.body;
+  if (!message) return res.status(400).json({ error: 'no message' });
+
+  const data = loadData();
+  const so = data.stageOverride || null;
+  conversationMessages.push({ role: 'user', content: message });
+
+  try {
+    const response = await getClient().messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 500,
+      system: buildSystemPrompt(data, topicId, so),
+      messages: conversationMessages
+    });
+
+    const raw = response.content[0].text.trim();
+    let parsed;
+    try {
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      parsed = JSON.parse(jsonMatch ? jsonMatch[0] : raw);
+    } catch (e) {
+      parsed = {
+        affirmation: '伝わりました！',
+        corrections: [],
+        phrases: [],
+        point: '',
+        followUp: raw
+      };
+    }
+
+    conversationMessages.push({ role: 'assistant', content: raw });
+
+    const wordCount = message.trim().split(/\s+/).filter(w => w.length > 0).length;
+    const wasCorrected = parsed.corrections && parsed.corrections.length > 0;
+    data.recentUtterances.push({ wordCount, wasCorrected });
+    if (data.recentUtterances.length > 20) data.recentUtterances.shift();
+    data.totalConversations++;
+    const today = new Date().toISOString().slice(0, 10);
+    if (!data.practiceDays.includes(today)) data.practiceDays.push(today);
+    saveData(data);
+    const stageUp = checkStageUp(data);
+
+    res.json({ response: parsed, stageUp, stage: data.stage });
+  } catch (e) {
+    console.error('API error:', e.message);
+    res.status(500).json({ error: 'AI request failed' });
+  }
+});
+
+// ─── Google Cloud TTS ───
+const GOOGLE_TTS_VOICES = [
+  { name: 'en-US-Wavenet-A', gender: 'MALE', accent: 'US' },
+  { name: 'en-US-Wavenet-C', gender: 'FEMALE', accent: 'US' },
+  { name: 'en-US-Wavenet-D', gender: 'MALE', accent: 'US' },
+  { name: 'en-US-Wavenet-F', gender: 'FEMALE', accent: 'US' },
+  { name: 'en-US-Neural2-A', gender: 'MALE', accent: 'US' },
+  { name: 'en-US-Neural2-C', gender: 'FEMALE', accent: 'US' },
+  { name: 'en-US-Neural2-D', gender: 'MALE', accent: 'US' },
+  { name: 'en-US-Neural2-F', gender: 'FEMALE', accent: 'US' },
+  { name: 'en-GB-Wavenet-A', gender: 'FEMALE', accent: 'UK' },
+  { name: 'en-GB-Wavenet-B', gender: 'MALE', accent: 'UK' },
+  { name: 'en-GB-Wavenet-D', gender: 'MALE', accent: 'UK' },
+  { name: 'en-GB-Neural2-A', gender: 'FEMALE', accent: 'UK' },
+  { name: 'en-GB-Neural2-B', gender: 'MALE', accent: 'UK' },
+  { name: 'en-GB-Neural2-D', gender: 'MALE', accent: 'UK' },
+  { name: 'en-AU-Wavenet-A', gender: 'FEMALE', accent: 'AU' },
+  { name: 'en-AU-Wavenet-B', gender: 'MALE', accent: 'AU' },
+  { name: 'en-AU-Neural2-A', gender: 'FEMALE', accent: 'AU' },
+  { name: 'en-AU-Neural2-B', gender: 'MALE', accent: 'AU' },
+  { name: 'en-IN-Wavenet-A', gender: 'FEMALE', accent: 'IN' },
+  { name: 'en-IN-Wavenet-B', gender: 'MALE', accent: 'IN' },
+];
+
+let lastTtsVoice = null;
+
+app.get('/api/tts-status', (req, res) => {
+  res.json({ available: !!process.env.GOOGLE_TTS_API_KEY });
+});
+
+app.post('/api/tts', async (req, res) => {
+  const apiKey = process.env.GOOGLE_TTS_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: 'Google TTS not configured' });
+
+  const { text, speed } = req.body;
+  if (!text) return res.status(400).json({ error: 'no text' });
+
+  const candidates = GOOGLE_TTS_VOICES.filter(v => v !== lastTtsVoice);
+  const voice = candidates[Math.floor(Math.random() * candidates.length)];
+  lastTtsVoice = voice;
+
+  const langCode = voice.name.split('-').slice(0, 2).join('-');
+
+  try {
+    const ttsRes = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: { text },
+        voice: { languageCode: langCode, name: voice.name, ssmlGender: voice.gender },
+        audioConfig: { audioEncoding: 'MP3', speakingRate: speed || 1.0, pitch: 0 }
+      })
+    });
+
+    if (!ttsRes.ok) {
+      const err = await ttsRes.text();
+      console.error('Google TTS error:', err);
+      return res.status(500).json({ error: 'TTS failed' });
+    }
+
+    const data = await ttsRes.json();
+    res.json({ audio: data.audioContent, voice: voice.name, accent: voice.accent });
+  } catch (e) {
+    console.error('Google TTS error:', e.message);
+    res.status(500).json({ error: 'TTS request failed' });
+  }
+});
+
+// ─── Listening Practice ───
+
+function buildListeningPrompt(type, stage) {
+  const levelGuide = stage <= 2
+    ? 'CEFR A2: Use simple everyday sentences with basic vocabulary from Oxford 3000 A2 level. Short, concrete topics (food, weather, daily life, shopping).'
+    : stage === 3
+    ? 'CEFR B1-: Use slightly longer sentences about work, travel, or daily routines. Oxford 3000 B1 vocabulary.'
+    : 'CEFR B1+/B2: Use complex sentences with abstract topics, longer passages. Oxford 3000 B1-B2 vocabulary.';
+
+  const typeInstructions = {
+    dictation: `Generate a single English sentence for a dictation exercise.
+The sentence should be natural and useful for a language learner.
+Return JSON only:
+{
+  "type": "dictation",
+  "sentence": "The full English sentence to dictate",
+  "hint": "Japanese hint about the topic (1 short sentence)"
+}`,
+    gapfill: `Generate a gap-fill exercise. Create a natural English sentence, then make a version with 2-3 key words replaced by ____.
+Return JSON only:
+{
+  "type": "gapfill",
+  "fullSentence": "The complete sentence with all words",
+  "gapped": "The sentence with ____ replacing key words",
+  "answers": ["word1", "word2"],
+  "hint": "Japanese context hint (1 short sentence)"
+}
+The answers array must contain the missing words in order. Use ____ (4 underscores) for each blank.`,
+    comprehension: `Generate a listening comprehension exercise. Write a short English passage (2-4 sentences), then a question about it with 3 answer options.
+Return JSON only:
+{
+  "type": "comprehension",
+  "passage": "A short English passage (2-4 sentences)",
+  "question": "A question about the passage in English",
+  "options": ["Option A", "Option B", "Option C"],
+  "correctIndex": 0,
+  "hint": "Japanese translation of the question"
+}
+correctIndex is 0-based. Only one option should be clearly correct based on the passage.`
+  };
+
+  return `You are an English listening exercise generator for a Japanese learner.
+${levelGuide}
+
+${typeInstructions[type]}
+
+Generate varied, interesting content. Do not repeat common textbook examples. Return valid JSON only, no other text.`;
+}
+
+app.post('/api/listening', async (req, res) => {
+  const { type } = req.body;
+  if (!['dictation', 'gapfill', 'comprehension'].includes(type)) {
+    return res.status(400).json({ error: 'invalid type' });
+  }
+
+  const data = loadData();
+  const stage = data.stageOverride || data.stage;
+
+  try {
+    const response = await getClient().messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 300,
+      messages: [{ role: 'user', content: buildListeningPrompt(type, stage) }]
+    });
+
+    const raw = response.content[0].text.trim();
+    let parsed;
+    try {
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      parsed = JSON.parse(jsonMatch ? jsonMatch[0] : raw);
+    } catch (e) {
+      return res.status(500).json({ error: 'Failed to parse exercise' });
+    }
+
+    res.json({ exercise: parsed });
+  } catch (e) {
+    console.error('Listening API error:', e.message);
+    res.status(500).json({ error: 'AI request failed' });
+  }
+});
+
+app.post('/api/listening-check', (req, res) => {
+  const { type, userAnswer, correctAnswer } = req.body;
+
+  if (type === 'dictation') {
+    const normalize = s => s.toLowerCase().trim().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
+    const ua = normalize(userAnswer || '');
+    const ca = normalize(correctAnswer || '');
+    const uaWords = ua.split(' ');
+    const caWords = ca.split(' ');
+    let matches = 0;
+    caWords.forEach((w, i) => { if (uaWords[i] === w) matches++; });
+    const similarity = caWords.length > 0 ? Math.round((matches / caWords.length) * 100) : 0;
+    const correct = similarity >= 80;
+    return res.json({ correct, similarity, normalized: { user: ua, answer: ca } });
+  }
+
+  if (type === 'gapfill') {
+    const answers = correctAnswer || [];
+    const userAnswers = userAnswer || [];
+    const results = answers.map((a, i) => {
+      const ua = (userAnswers[i] || '').trim().toLowerCase();
+      const ca = a.trim().toLowerCase();
+      return { correct: ua === ca, userAnswer: userAnswers[i] || '', correctAnswer: a };
+    });
+    const allCorrect = results.every(r => r.correct);
+    return res.json({ correct: allCorrect, results });
+  }
+
+  if (type === 'comprehension') {
+    const correct = parseInt(userAnswer) === parseInt(correctAnswer);
+    return res.json({ correct });
+  }
+
+  res.status(400).json({ error: 'invalid type' });
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  const url = `http://localhost:${PORT}`;
+  console.log(`Hiro Speaking Practice running on ${url}`);
+  console.log('ブラウザで上のURLを開いてください。');
+  console.log('終了するにはこのウィンドウを閉じるか Ctrl+C を押してください。');
+
+  if (process.env.NO_OPEN) return;
+  const { exec } = require('child_process');
+  if (process.platform === 'win32') {
+    exec(`start "" "${url}"`);
+  } else if (process.platform === 'darwin') {
+    exec(`open "${url}"`);
+  } else {
+    exec(`xdg-open "${url}"`);
+  }
+}).on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`ポート ${PORT} は既に使用されています。`);
+    console.error('他のアプリを閉じるか、別のポートを指定してください。');
+  } else {
+    console.error('サーバー起動エラー:', err.message);
+  }
+  if (process.pkg) {
+    console.log('\nEnterキーを押して終了...');
+    process.stdin.resume();
+    process.stdin.once('data', () => process.exit(1));
+  }
+});
