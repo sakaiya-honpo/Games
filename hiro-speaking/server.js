@@ -88,6 +88,7 @@ function loadData() {
   return {
     phrases: [],
     stage: 1,
+    stageOverride: null,
     recentUtterances: [],
     totalConversations: 0,
     practiceDays: [],
@@ -103,8 +104,8 @@ function saveData(data) {
 let conversationMessages = [];
 
 // ─── Stage-specific system prompt ───
-function buildSystemPrompt(data, topicId) {
-  const stage = data.stage;
+function buildSystemPrompt(data, topicId, stageOverride) {
+  const stage = stageOverride || data.stage;
   const topicInfo = TOPICS[topicId];
 
   const stageInstructions = {
@@ -143,6 +144,8 @@ function buildSystemPrompt(data, topicId) {
 
   return `あなたはフレンドリーな英会話の練習相手です。
 ユーザーはCEFR ${STAGE_NAMES[stage]}レベルの日本語話者で、ドイツ在住です。
+
+【参考語彙リスト】Oxford 3000 Word List（約3870語）を基準語彙として使用してください。ステージに応じたレベルの語彙を選んでください。リストは /oxford3000.txt で参照可能です。
 
 【メソッド：だいじろー式「フレーズの引き出しを増やす」】
 ゼロから文法を組み立てるのではなく、フレーズの塊をたくさん覚えて引き出して投げる練習。
@@ -189,8 +192,8 @@ phrases は1〜3個。ユーザーの発話に関連する自然な表現。
 ユーザーが文法的に正しい自然な英語を使った場合は、affirmationでしっかり褒めて、correctionsは空配列にしてください。`;
 }
 
-function buildStartPrompt(data, topicId) {
-  const stage = data.stage;
+function buildStartPrompt(data, topicId, stageOverride) {
+  const stage = stageOverride || data.stage;
   const topicInfo = TOPICS[topicId];
 
   return `あなたはフレンドリーな英会話の練習相手です。
@@ -266,7 +269,15 @@ app.get('/api/data', (req, res) => {
     id,
     name: TOPICS[id].name
   }));
-  res.json({ ...data, availableTopics });
+  res.json({ ...data, stageOverride: data.stageOverride || null, availableTopics });
+});
+
+app.post('/api/stage-override', (req, res) => {
+  const { stageOverride } = req.body;
+  const data = loadData();
+  data.stageOverride = (typeof stageOverride === 'number' && stageOverride >= 1 && stageOverride <= 5) ? stageOverride : null;
+  saveData(data);
+  res.json({ ok: true, stageOverride: data.stageOverride });
 });
 
 app.post('/api/phrases', (req, res) => {
@@ -297,13 +308,14 @@ app.post('/api/start', async (req, res) => {
   if (!TOPICS[topicId]) return res.status(400).json({ error: 'invalid topic' });
 
   const data = loadData();
+  const so = data.stageOverride || null;
   conversationMessages = [];
 
   try {
     const response = await getClient().messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 200,
-      messages: [{ role: 'user', content: buildStartPrompt(data, topicId) }]
+      messages: [{ role: 'user', content: buildStartPrompt(data, topicId, so) }]
     });
 
     const question = response.content[0].text.trim();
@@ -321,13 +333,14 @@ app.post('/api/chat', async (req, res) => {
   if (!message) return res.status(400).json({ error: 'no message' });
 
   const data = loadData();
+  const so = data.stageOverride || null;
   conversationMessages.push({ role: 'user', content: message });
 
   try {
     const response = await getClient().messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 500,
-      system: buildSystemPrompt(data, topicId),
+      system: buildSystemPrompt(data, topicId, so),
       messages: conversationMessages
     });
 

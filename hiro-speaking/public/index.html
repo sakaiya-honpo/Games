@@ -375,6 +375,17 @@ input, textarea { font-family: inherit; font-size: inherit; }
 }
 .settings-key-dot.active { background: #4CAF50; }
 .settings-key-dot.inactive { background: var(--coral); }
+#voiceRandomToggle:checked + span { background: var(--jade); }
+#voiceRandomToggle:checked ~ .toggle-knob { left: 22px; }
+.welcome-progress {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; max-width: 280px;
+}
+.welcome-progress-item {
+  padding: 8px 10px; background: var(--surface-raised); border-radius: 10px;
+  text-align: center; box-shadow: 0 1px 3px var(--shadow);
+}
+.welcome-progress-item .wp-val { font-size: 18px; font-weight: 700; color: var(--jade); line-height: 1.2; }
+.welcome-progress-item .wp-label { font-size: 10px; color: var(--text-tertiary); }
 </style>
 </head>
 <body>
@@ -424,6 +435,7 @@ input, textarea { font-family: inherit; font-size: inherit; }
       <div class="welcome-icon">💬</div>
       <h2>まず言ってみよう</h2>
       <p>完璧じゃなくてOK。文法も発音も気にせず、まず英語で言ってみよう。自然な表現は後から覚えればいい。</p>
+      <div class="welcome-progress" id="welcomeProgress"></div>
       <button class="welcome-start" id="startBtn">会話をはじめる</button>
     </div>
     <div id="conversationArea" style="display:none;flex-direction:column;">
@@ -469,8 +481,28 @@ input, textarea { font-family: inherit; font-size: inherit; }
   <div class="modal-overlay" id="settingsModal">
     <div class="modal-sheet">
       <h3>設定</h3>
-      <p>APIキーの管理</p>
+      <p>音声・レベル・APIキーの管理</p>
       <div id="settingsContent" style="display:flex;flex-direction:column;gap:12px;">
+        <div class="setup-field">
+          <label class="setup-label">読み上げ音声</label>
+          <select class="setup-input" id="voiceSelect" style="appearance:auto;padding:10px 14px;"></select>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:var(--surface-raised);border-radius:10px;">
+          <div><div style="font-size:13px;font-weight:500;">ランダム音声 (リスニング練習)</div><div style="font-size:11px;color:var(--text-tertiary);">毎回違う声で読み上げ</div></div>
+          <label style="position:relative;width:44px;height:24px;flex-shrink:0;"><input type="checkbox" id="voiceRandomToggle" style="opacity:0;width:0;height:0;"><span style="position:absolute;inset:0;background:var(--border);border-radius:12px;cursor:pointer;transition:.2s;"></span><span class="toggle-knob" style="position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:.2s;"></span></label>
+        </div>
+        <div class="setup-field">
+          <label class="setup-label">練習レベル</label>
+          <select class="setup-input" id="stageOverrideSelect" style="appearance:auto;padding:10px 14px;">
+            <option value="">自動 (おすすめ)</option>
+            <option value="1">Stage 1 (A2)</option>
+            <option value="2">Stage 2 (A2+)</option>
+            <option value="3">Stage 3 (B1-)</option>
+            <option value="4">Stage 4 (B1+)</option>
+            <option value="5">Stage 5 (B2)</option>
+          </select>
+        </div>
+        <div style="height:1px;background:var(--border);margin:4px 0;"></div>
         <div class="settings-key-status" id="keyStatus"></div>
         <div class="setup-field">
           <label class="setup-label">APIキーを変更</label>
@@ -531,6 +563,14 @@ async function api(path, body) {
 
 async function loadAppData() {
   appData = await api('/api/data');
+  const stg = appData.stageOverride || appData.stage;
+  document.querySelector('.header-text p').textContent = `Stage ${stg} (${STAGE_NAMES[stg]}) — フレーズの引き出しを増やそう`;
+  const wp = $('welcomeProgress');
+  if (wp) wp.innerHTML = `
+    <div class="welcome-progress-item"><div class="wp-val">Stage ${stg}</div><div class="wp-label">${STAGE_NAMES[stg]}</div></div>
+    <div class="welcome-progress-item"><div class="wp-val">${appData.phrases.length}</div><div class="wp-label">保存フレーズ</div></div>
+    <div class="welcome-progress-item"><div class="wp-val">${appData.totalConversations}</div><div class="wp-label">総会話数</div></div>
+    <div class="welcome-progress-item"><div class="wp-val">${(appData.practiceDays||[]).length}</div><div class="wp-label">練習日数</div></div>`;
 }
 
 // ─── Tabs ───
@@ -587,14 +627,27 @@ async function startConversation(topicId) {
 }
 
 // ─── Text-to-Speech ───
+function getEnglishVoices() {
+  return speechSynthesis.getVoices().filter(v => v.lang.startsWith('en'));
+}
 function speak(text, btn) {
   speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text);
   utter.lang = 'en-US';
   utter.rate = 0.9;
-  const voices = speechSynthesis.getVoices();
-  const preferred = voices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || voices.find(v => v.lang.startsWith('en'));
-  if (preferred) utter.voice = preferred;
+  const enVoices = getEnglishVoices();
+  const isRandom = localStorage.getItem('voiceRandom') === 'true';
+  if (isRandom && enVoices.length > 0) {
+    utter.voice = enVoices[Math.floor(Math.random() * enVoices.length)];
+  } else {
+    const savedVoice = localStorage.getItem('voicePreference');
+    const match = savedVoice && enVoices.find(v => v.name === savedVoice);
+    if (match) { utter.voice = match; }
+    else {
+      const preferred = enVoices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || enVoices[0];
+      if (preferred) utter.voice = preferred;
+    }
+  }
   if (btn) {
     btn.classList.add('speaking');
     utter.onend = () => btn.classList.remove('speaking');
@@ -603,6 +656,7 @@ function speak(text, btn) {
   speechSynthesis.speak(utter);
 }
 speechSynthesis.getVoices();
+if (speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
 
 function speakBtnHtml() {
   return `<button class="speak-btn" title="読み上げ"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></button>`;
@@ -1046,7 +1100,28 @@ $('settingsBtn').addEventListener('click', async () => {
     : '<span class="settings-key-dot inactive"></span>APIキー未設定';
   $('settingsKeyInput').value = '';
   $('settingsError').classList.remove('show');
+  const voiceSel = $('voiceSelect');
+  const enVoices = getEnglishVoices();
+  const savedVoice = localStorage.getItem('voicePreference') || '';
+  voiceSel.innerHTML = '<option value="">(デフォルト)</option>' + enVoices.map(v => `<option value="${escHtml(v.name)}" ${v.name === savedVoice ? 'selected' : ''}>${escHtml(v.name)} (${v.lang})</option>`).join('');
+  $('voiceRandomToggle').checked = localStorage.getItem('voiceRandom') === 'true';
+  await loadAppData();
+  $('stageOverrideSelect').value = appData.stageOverride ? String(appData.stageOverride) : '';
   $('settingsModal').classList.add('open');
+});
+$('voiceSelect').addEventListener('change', () => {
+  const v = $('voiceSelect').value;
+  if (v) localStorage.setItem('voicePreference', v); else localStorage.removeItem('voicePreference');
+});
+$('voiceRandomToggle').addEventListener('change', () => {
+  localStorage.setItem('voiceRandom', $('voiceRandomToggle').checked ? 'true' : 'false');
+});
+$('stageOverrideSelect').addEventListener('change', async () => {
+  const val = $('stageOverrideSelect').value;
+  const so = val ? parseInt(val) : null;
+  await api('/api/stage-override', { stageOverride: so });
+  await loadAppData();
+  showToast(so ? `練習レベルをStage ${so}に設定しました` : '練習レベルを自動に戻しました');
 });
 $('settingsModal').addEventListener('click', e => { if (e.target === $('settingsModal')) $('settingsModal').classList.remove('open'); });
 $('settingsSave').addEventListener('click', () => {
