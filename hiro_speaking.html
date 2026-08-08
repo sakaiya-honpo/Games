@@ -1,0 +1,1814 @@
+<title>Hiro — 英会話練習</title>
+<style>
+:root {
+  --jade: #2B7A6B;
+  --jade-soft: #d5ece7;
+  --gold: #C08B3E;
+  --gold-soft: #f5e6cc;
+  --coral: #C75E42;
+  --bg: #F4EFE6;
+  --surface: #EAE4D9;
+  --surface-raised: #FFFFFF;
+  --text: #1C1A17;
+  --text-secondary: #6B6560;
+  --text-tertiary: #9B9590;
+  --border: #DDD6CC;
+  --tab-inactive: #A09890;
+  --input-bg: #FFFFFF;
+  --msg-user-bg: #2B7A6B;
+  --msg-user-text: #FFFFFF;
+  --msg-ai-bg: #FFFFFF;
+  --shadow: rgba(28,26,23,0.06);
+  --font-body: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif;
+  --font-phrase: Georgia, "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --jade: #3DA08E;
+    --jade-soft: #1e3632;
+    --gold: #D4A04E;
+    --gold-soft: #3a2e1a;
+    --coral: #E07A60;
+    --bg: #1A1B1F;
+    --surface: #242630;
+    --surface-raised: #2A2C36;
+    --text: #E8E4DE;
+    --text-secondary: #9A958E;
+    --text-tertiary: #6A655E;
+    --border: #363840;
+    --tab-inactive: #6A655E;
+    --input-bg: #2A2C36;
+    --msg-user-bg: #2B7A6B;
+    --msg-user-text: #FFFFFF;
+    --msg-ai-bg: #2A2C36;
+    --shadow: rgba(0,0,0,0.2);
+  }
+}
+:root[data-theme="dark"] {
+  --jade: #3DA08E;
+  --jade-soft: #1e3632;
+  --gold: #D4A04E;
+  --gold-soft: #3a2e1a;
+  --coral: #E07A60;
+  --bg: #1A1B1F;
+  --surface: #242630;
+  --surface-raised: #2A2C36;
+  --text: #E8E4DE;
+  --text-secondary: #9A958E;
+  --text-tertiary: #6A655E;
+  --border: #363840;
+  --tab-inactive: #6A655E;
+  --input-bg: #2A2C36;
+  --msg-user-bg: #2B7A6B;
+  --msg-user-text: #FFFFFF;
+  --msg-ai-bg: #2A2C36;
+  --shadow: rgba(0,0,0,0.2);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.6;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  -webkit-font-smoothing: antialiased;
+}
+button { font-family: inherit; cursor: pointer; border: none; background: none; }
+input, textarea { font-family: inherit; font-size: inherit; }
+
+.app {
+  width: 100%;
+  max-width: 480px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* ─── Header ─── */
+.header {
+  padding: 16px 20px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.header-icon {
+  width: 36px;
+  height: 36px;
+  background: var(--jade);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.header-text h1 {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.header-text p {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+.header-actions { margin-left: auto; display: flex; gap: 6px; }
+.header-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: var(--text-secondary);
+  transition: background 0.15s;
+}
+.header-btn:hover { background: var(--surface); }
+
+/* ─── Tabs ─── */
+.tab-bar {
+  display: flex;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+  z-index: 10;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.tab-btn {
+  flex: 1;
+  padding: 8px 0 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--tab-inactive);
+  transition: color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.tab-btn .tab-icon { font-size: 20px; line-height: 1; }
+.tab-btn.active { color: var(--jade); }
+.tab-btn.active .tab-icon { transform: scale(1.05); }
+
+/* ─── Panels ─── */
+.panel {
+  flex: 1;
+  display: none;
+  flex-direction: column;
+  padding-bottom: 62px;
+  overflow-y: auto;
+}
+.panel.active { display: flex; }
+
+/* ─── Conversation Panel ─── */
+.topic-selector {
+  padding: 14px 20px;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.topic-selector::-webkit-scrollbar { display: none; }
+.topic-chip {
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  white-space: nowrap;
+  background: var(--surface);
+  color: var(--text-secondary);
+  transition: all 0.15s;
+  border: 1px solid transparent;
+}
+.topic-chip.active {
+  background: var(--jade-soft);
+  color: var(--jade);
+  border-color: var(--jade);
+}
+
+.messages {
+  flex: 1;
+  padding: 8px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.msg {
+  max-width: 88%;
+  animation: msgIn 0.25s ease-out;
+}
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.msg-user {
+  align-self: flex-end;
+  background: var(--msg-user-bg);
+  color: var(--msg-user-text);
+  padding: 10px 14px;
+  border-radius: 16px 16px 4px 16px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.msg-ai {
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.msg-ai-bubble {
+  background: var(--msg-ai-bg);
+  border-radius: 16px 16px 16px 4px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 3px var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.msg-ai-q {
+  font-family: var(--font-phrase);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.msg-affirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--gold-soft);
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.msg-affirm-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  background: var(--gold);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #fff;
+  margin-top: 1px;
+}
+.msg-natural {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.msg-natural-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+.msg-phrase-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+.msg-phrase-text {
+  font-family: var(--font-phrase);
+  font-size: 15px;
+  color: var(--jade);
+  font-weight: 500;
+}
+.msg-phrase-note {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.msg-point {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  padding-left: 2px;
+}
+.msg-correction {
+  padding: 8px 10px;
+  background: var(--surface);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.msg-correction-orig {
+  color: var(--coral);
+  text-decoration: line-through;
+  text-decoration-color: var(--coral);
+}
+.msg-correction-fix {
+  color: var(--jade);
+  font-weight: 500;
+}
+.msg-correction-note {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.msg-save-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.msg-save-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.msg-save-btn:hover { background: var(--gold-soft); color: var(--gold); }
+.msg-save-btn.saved {
+  background: var(--gold-soft);
+  color: var(--gold);
+  pointer-events: none;
+}
+
+.msg-followup {
+  font-family: var(--font-phrase);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+/* ─── Input area ─── */
+.input-area {
+  padding: 10px 16px 12px;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  position: sticky;
+  bottom: 62px;
+}
+.input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.input-field {
+  flex: 1;
+  resize: none;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 10px 16px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.4;
+  min-height: 42px;
+  max-height: 120px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.input-field::placeholder { color: var(--text-tertiary); }
+.input-field:focus { border-color: var(--jade); }
+.send-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--jade);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+  transition: opacity 0.15s, transform 0.1s;
+}
+.send-btn:disabled { opacity: 0.4; }
+.send-btn:active:not(:disabled) { transform: scale(0.92); }
+.input-hint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-align: center;
+  margin-top: 6px;
+}
+
+/* ─── Welcome ─── */
+.welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 32px;
+  text-align: center;
+  gap: 16px;
+}
+.welcome-icon {
+  font-size: 48px;
+  margin-bottom: 4px;
+}
+.welcome h2 {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.welcome p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  max-width: 300px;
+}
+.welcome-start {
+  margin-top: 8px;
+  padding: 12px 28px;
+  background: var(--jade);
+  color: #fff;
+  border-radius: 24px;
+  font-size: 15px;
+  font-weight: 500;
+  transition: opacity 0.15s;
+}
+.welcome-start:hover { opacity: 0.9; }
+
+/* ─── Notebook Panel ─── */
+.notebook-header {
+  padding: 20px 20px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.notebook-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+}
+.notebook-count {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  background: var(--surface);
+  padding: 2px 10px;
+  border-radius: 10px;
+}
+.notebook-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 32px;
+  text-align: center;
+  gap: 12px;
+  color: var(--text-secondary);
+}
+.notebook-empty-icon { font-size: 40px; opacity: 0.5; }
+.notebook-empty p { font-size: 14px; line-height: 1.5; }
+.notebook-list {
+  padding: 4px 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.phrase-card {
+  background: var(--surface-raised);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 3px var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: msgIn 0.2s ease-out;
+}
+.phrase-card-en {
+  font-family: var(--font-phrase);
+  font-size: 16px;
+  color: var(--jade);
+  line-height: 1.4;
+}
+.phrase-card-note {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.phrase-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.phrase-action {
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  transition: all 0.15s;
+}
+.phrase-action:hover { background: var(--jade-soft); color: var(--jade); }
+.phrase-action.delete:hover { background: #f5ddd8; color: var(--coral); }
+.phrase-examples {
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.phrase-examples p {
+  font-family: var(--font-phrase);
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.5;
+}
+.phrase-examples p::before { content: "・"; color: var(--text-tertiary); }
+
+/* ─── Review Panel ─── */
+.review-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 32px;
+  text-align: center;
+  gap: 12px;
+  color: var(--text-secondary);
+}
+.review-empty-icon { font-size: 40px; opacity: 0.5; }
+.review-empty p { font-size: 14px; line-height: 1.5; }
+.review-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  gap: 20px;
+}
+.review-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.review-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--surface);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.review-bar-fill {
+  height: 100%;
+  background: var(--jade);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.review-card {
+  background: var(--surface-raised);
+  border-radius: 16px;
+  padding: 24px 20px;
+  box-shadow: 0 2px 8px var(--shadow);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+.review-card-phrase {
+  font-family: var(--font-phrase);
+  font-size: 22px;
+  color: var(--jade);
+  line-height: 1.4;
+}
+.review-card-note {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.review-examples {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.review-examples-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+.review-examples p {
+  font-family: var(--font-phrase);
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.5;
+  padding-left: 2px;
+}
+.review-examples p::before { content: "・"; color: var(--text-tertiary); }
+.review-practice {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.review-practice-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+.review-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 16px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 15px;
+  font-family: var(--font-phrase);
+  outline: none;
+  text-align: center;
+  transition: border-color 0.15s;
+}
+.review-input:focus { border-color: var(--jade); }
+.review-check-btn {
+  padding: 10px 24px;
+  background: var(--jade);
+  color: #fff;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  align-self: center;
+  transition: opacity 0.15s;
+}
+.review-check-btn:hover { opacity: 0.9; }
+.review-feedback {
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  animation: msgIn 0.2s ease-out;
+}
+.review-feedback.good {
+  background: var(--jade-soft);
+  color: var(--jade);
+}
+.review-feedback.try-again {
+  background: var(--gold-soft);
+  color: var(--text);
+}
+.review-nav {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+.review-nav-btn {
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  transition: all 0.15s;
+}
+.review-nav-btn:hover { background: var(--jade-soft); color: var(--jade); }
+.review-nav-btn.primary {
+  background: var(--jade);
+  color: #fff;
+}
+.review-complete {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+  gap: 16px;
+  animation: msgIn 0.3s ease-out;
+}
+.review-complete-icon { font-size: 48px; }
+.review-complete h3 { font-size: 20px; font-weight: 600; }
+.review-complete p { font-size: 14px; color: var(--text-secondary); line-height: 1.5; }
+.review-restart-btn {
+  padding: 12px 28px;
+  background: var(--jade);
+  color: #fff;
+  border-radius: 24px;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+/* ─── Topic modal ─── */
+.topic-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 100;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+}
+.topic-modal-overlay.open { display: flex; }
+.topic-modal {
+  background: var(--bg);
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 480px;
+  padding: 20px;
+  padding-bottom: calc(20px + env(safe-area-inset-bottom, 0));
+  animation: slideUp 0.25s ease-out;
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.topic-modal h3 {
+  font-size: 17px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.topic-modal p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+.topic-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.topic-card {
+  padding: 14px;
+  background: var(--surface-raised);
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: all 0.15s;
+}
+.topic-card:hover {
+  border-color: var(--jade);
+  background: var(--jade-soft);
+}
+.topic-card-icon { font-size: 24px; }
+.topic-card-name { font-size: 14px; font-weight: 500; }
+.topic-card-desc { font-size: 11px; color: var(--text-secondary); }
+
+/* ─── Toast ─── */
+.toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--text);
+  color: var(--bg);
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.25s ease;
+  z-index: 200;
+  white-space: nowrap;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+</style>
+
+<div class="app" id="app">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-icon">H</div>
+    <div class="header-text">
+      <h1>英会話練習</h1>
+      <p>フレーズの引き出しを増やそう</p>
+    </div>
+    <div class="header-actions">
+      <button class="header-btn" id="newTopicBtn" title="トピックを変える">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="9" y1="10" x2="15" y2="10"/><line x1="12" y1="7" x2="12" y2="13"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Conversation Panel -->
+  <div class="panel active" id="panelConversation">
+    <div class="welcome" id="welcomeScreen">
+      <div class="welcome-icon">💬</div>
+      <h2>まず言ってみよう</h2>
+      <p>完璧じゃなくてOK。文法も発音も気にせず、まず英語で言ってみよう。自然な表現は後から覚えればいい。</p>
+      <button class="welcome-start" id="startBtn">会話をはじめる</button>
+    </div>
+    <div id="conversationArea" style="display:none;flex:1;display:none;flex-direction:column;">
+      <div class="messages" id="messages"></div>
+      <div class="input-area">
+        <div class="input-row">
+          <textarea class="input-field" id="userInput" rows="1" placeholder="英語で答えてみよう（日本語混じりでもOK）"></textarea>
+          <button class="send-btn" id="sendBtn" disabled>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+        <div class="input-hint">完璧じゃなくてOK！まず言ってみよう</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notebook Panel -->
+  <div class="panel" id="panelNotebook"></div>
+
+  <!-- Review Panel -->
+  <div class="panel" id="panelReview"></div>
+
+  <!-- Tab Bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="conversation">
+      <span class="tab-icon">💬</span>
+      会話
+    </button>
+    <button class="tab-btn" data-tab="notebook">
+      <span class="tab-icon">📖</span>
+      メモ帳
+    </button>
+    <button class="tab-btn" data-tab="review">
+      <span class="tab-icon">🔄</span>
+      復習
+    </button>
+  </div>
+
+  <!-- Topic Modal -->
+  <div class="topic-modal-overlay" id="topicModal">
+    <div class="topic-modal">
+      <h3>トピックを選ぼう</h3>
+      <p>気になるトピックから会話を始められます</p>
+      <div class="topic-grid" id="topicGrid"></div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+// ─── Data: Conversation Topics ───
+const TOPICS = [
+  {
+    id: 'food', name: '食事', icon: '🍽', desc: '何食べた？どこで？',
+    conversations: [
+      {
+        q: "What did you eat for lunch today?",
+        phrases: [
+          { en: "I had pasta for lunch.", note: "食事について→ had が自然" },
+          { en: "I grabbed a quick sandwich.", note: "さっと食べた→ grabbed" },
+          { en: "I just had some leftovers.", note: "残り物→ leftovers" }
+        ],
+        point: "食事の話では eat より had を使うとより自然です。\"I had ~\" で覚えておくと便利。",
+        followUp: "Nice! Where did you eat?"
+      },
+      {
+        q: "Where did you eat?",
+        phrases: [
+          { en: "I ate at a cafe near my office.", note: "場所→ at + 場所" },
+          { en: "I just ate at home.", note: "家で→ at home" },
+          { en: "I went to a new ramen place.", note: "新しい店→ a new ~ place" }
+        ],
+        point: "場所を言うときは \"at + 場所\" が基本。レストランなら \"I went to ~\" も自然。",
+        followUp: "That sounds good! What did you have to drink?"
+      },
+      {
+        q: "What did you have to drink?",
+        phrases: [
+          { en: "I had an iced coffee.", note: "飲み物も had でOK" },
+          { en: "Just water.", note: "シンプルに一言でもOK" },
+          { en: "I got a green tea latte.", note: "注文した→ I got ~" }
+        ],
+        point: "飲み物の注文には \"I got ~\" もよく使います。カジュアルな響き。",
+        followUp: "Do you usually cook dinner, or do you eat out?"
+      },
+      {
+        q: "Do you usually cook dinner, or do you eat out?",
+        phrases: [
+          { en: "I usually cook at home.", note: "普段→ usually" },
+          { en: "It depends on the day.", note: "日による→ it depends on ~" },
+          { en: "I eat out once or twice a week.", note: "頻度→ once or twice a week" }
+        ],
+        point: "\"It depends on ~\" は万能フレーズ。「〜による」と言いたいときに使えます。",
+        followUp: "What's your favorite thing to cook?"
+      },
+      {
+        q: "What's your favorite thing to cook?",
+        phrases: [
+          { en: "I like making curry.", note: "料理する→ make/cook" },
+          { en: "I'm pretty good at stir-fry.", note: "得意→ I'm pretty good at ~" },
+          { en: "Honestly, I'm not much of a cook.", note: "苦手→ not much of a ~" }
+        ],
+        point: "\"I'm not much of a ~\" で「あまり〜ではない」を柔らかく表現できます。",
+        followUp: "Have you tried any German food you really liked?"
+      }
+    ]
+  },
+  {
+    id: 'weekend', name: '週末', icon: '🌤', desc: '予定・過ごし方',
+    conversations: [
+      {
+        q: "What are you doing this weekend?",
+        phrases: [
+          { en: "I'm planning to go to a flea market.", note: "予定→ I'm planning to ~" },
+          { en: "Nothing special, just relaxing.", note: "特になし→ nothing special" },
+          { en: "I might meet up with some friends.", note: "かもしれない→ I might ~" }
+        ],
+        point: "\"I might ~\" は「〜するかも」。確定していない予定に便利。",
+        followUp: "That sounds nice! Do you usually go out on weekends?"
+      },
+      {
+        q: "Do you usually go out on weekends?",
+        phrases: [
+          { en: "I try to get out at least once.", note: "少なくとも→ at least" },
+          { en: "I'm more of a homebody.", note: "インドア派→ homebody" },
+          { en: "It depends on the weather.", note: "天気次第→ depends on the weather" }
+        ],
+        point: "\"I'm more of a ~\" は自分のタイプを説明するのに便利。\"I'm more of a morning person\" なども。",
+        followUp: "What did you do last weekend?"
+      },
+      {
+        q: "What did you do last weekend?",
+        phrases: [
+          { en: "I went for a walk along the river.", note: "散歩→ went for a walk" },
+          { en: "I spent most of the day reading.", note: "〜して過ごした→ spent ~ doing" },
+          { en: "I caught up on some sleep.", note: "寝だめ→ caught up on sleep" }
+        ],
+        point: "\"spent + 時間 + ~ing\" は「〜して過ごした」の定番パターン。",
+        followUp: "Do you have any plans for your next vacation?"
+      },
+      {
+        q: "Do you have any plans for your next vacation?",
+        phrases: [
+          { en: "I'm thinking about going to Italy.", note: "検討中→ thinking about ~ing" },
+          { en: "I haven't decided yet.", note: "未定→ haven't decided yet" },
+          { en: "I might just take it easy at home.", note: "のんびり→ take it easy" }
+        ],
+        point: "\"I'm thinking about ~ing\" は検討中のことを話すのに最適。",
+        followUp: "What do you like to do to relax?"
+      }
+    ]
+  },
+  {
+    id: 'hobbies', name: '趣味', icon: '🎮', desc: '好きなこと',
+    conversations: [
+      {
+        q: "What do you like to do in your free time?",
+        phrases: [
+          { en: "I'm really into playing games.", note: "ハマっている→ I'm really into ~" },
+          { en: "I've been watching a lot of YouTube lately.", note: "最近→ lately" },
+          { en: "I enjoy going for runs.", note: "楽しむ→ enjoy ~ing" }
+        ],
+        point: "\"I'm really into ~\" は今ハマっていることを話すのに最適。",
+        followUp: "How long have you been doing that?"
+      },
+      {
+        q: "How long have you been doing that?",
+        phrases: [
+          { en: "For about three years.", note: "約〜→ about / around" },
+          { en: "Since I moved to Germany.", note: "〜以来→ since ~" },
+          { en: "I just started recently.", note: "最近始めた→ just started recently" }
+        ],
+        point: "期間は \"for + 期間\"、起点は \"since + 時点\" で使い分けます。",
+        followUp: "Have you gotten any better at it?"
+      },
+      {
+        q: "Have you gotten any better at it?",
+        phrases: [
+          { en: "I think I've improved a little.", note: "少し上達→ improved a little" },
+          { en: "I'm getting there.", note: "徐々に→ getting there" },
+          { en: "Not really, but I still enjoy it.", note: "でも楽しい→ but I still enjoy it" }
+        ],
+        point: "\"I'm getting there\" は「まだだけど近づいてる」の便利フレーズ。",
+        followUp: "Is there anything new you'd like to try?"
+      },
+      {
+        q: "Is there anything new you'd like to try?",
+        phrases: [
+          { en: "I've always wanted to try surfing.", note: "ずっと〜したかった→ always wanted to ~" },
+          { en: "I'd love to learn to play the piano.", note: "〜したい→ I'd love to ~" },
+          { en: "I'm curious about pottery.", note: "興味がある→ curious about ~" }
+        ],
+        point: "\"I'd love to ~\" は \"I want to\" より丁寧で大人っぽい表現。",
+        followUp: "That sounds fun! What got you interested in that?"
+      }
+    ]
+  },
+  {
+    id: 'travel', name: '旅行', icon: '✈️', desc: '行った場所・行きたい場所',
+    conversations: [
+      {
+        q: "Have you traveled anywhere recently?",
+        phrases: [
+          { en: "I went to Barcelona last month.", note: "先月→ last month" },
+          { en: "Not recently, but I'm planning a trip.", note: "計画中→ planning a trip" },
+          { en: "I took a day trip to a nearby town.", note: "日帰り→ a day trip" }
+        ],
+        point: "\"day trip\" は日帰り旅行。ドイツでは週末によく使える表現。",
+        followUp: "What was the best part of the trip?"
+      },
+      {
+        q: "What was the best part of the trip?",
+        phrases: [
+          { en: "The food was amazing.", note: "最高だった→ amazing" },
+          { en: "I loved the architecture.", note: "気に入った→ I loved ~" },
+          { en: "Just walking around and exploring.", note: "散策→ walking around and exploring" }
+        ],
+        point: "\"walking around and ~ing\" は旅行の過ごし方を話すのに自然な形。",
+        followUp: "Where would you like to go next?"
+      },
+      {
+        q: "Where would you like to go next?",
+        phrases: [
+          { en: "I've been wanting to visit Japan again.", note: "〜したいと思っていた→ I've been wanting to ~" },
+          { en: "Somewhere warm, like Greece.", note: "暖かいところ→ somewhere warm" },
+          { en: "I'd love to go on a road trip.", note: "ロードトリップ→ go on a road trip" }
+        ],
+        point: "\"somewhere + 形容詞\" で「〜なところ」。somewhere quiet, somewhere cheap なども。",
+        followUp: "Do you prefer traveling alone or with someone?"
+      },
+      {
+        q: "Do you prefer traveling alone or with someone?",
+        phrases: [
+          { en: "I usually travel with my partner.", note: "パートナーと→ with my partner" },
+          { en: "I like traveling solo sometimes.", note: "一人旅→ solo / on my own" },
+          { en: "It depends on where I'm going.", note: "場所による→ depends on where ~" }
+        ],
+        point: "\"It depends on where/what/who ~\" で「〜次第で」と言えます。応用範囲が広い。",
+        followUp: "What's the longest trip you've ever taken?"
+      }
+    ]
+  },
+  {
+    id: 'work', name: '仕事', icon: '💼', desc: '仕事・職場の話',
+    conversations: [
+      {
+        q: "How's work going these days?",
+        phrases: [
+          { en: "It's been pretty busy lately.", note: "忙しい→ busy lately" },
+          { en: "Not bad, just the usual.", note: "いつも通り→ just the usual" },
+          { en: "It's been a bit stressful, actually.", note: "実は→ actually" }
+        ],
+        point: "\"actually\" を文末に置くと「実はね」とカジュアルに本音を言えます。",
+        followUp: "What do you do for work, if you don't mind me asking?"
+      },
+      {
+        q: "What do you do for work, if you don't mind me asking?",
+        phrases: [
+          { en: "I work in IT.", note: "〜の分野→ I work in ~" },
+          { en: "I'm a software engineer.", note: "職業→ I'm a ~" },
+          { en: "I do freelance translation.", note: "フリーランス→ do freelance ~" }
+        ],
+        point: "職業は \"I'm a ~\" か \"I work in ~（分野）\" か \"I work at ~（会社）\"。",
+        followUp: "Do you enjoy what you do?"
+      },
+      {
+        q: "Do you enjoy what you do?",
+        phrases: [
+          { en: "For the most part, yes.", note: "概ね→ for the most part" },
+          { en: "I like the work, but the hours are tough.", note: "でも→ but ~" },
+          { en: "It's rewarding but challenging.", note: "やりがいある→ rewarding" }
+        ],
+        point: "\"for the most part\" は「概ね、だいたい」。100%じゃないけどおおよそYES。",
+        followUp: "What's the hardest part of your job?"
+      }
+    ]
+  },
+  {
+    id: 'daily', name: '日常', icon: '☀️', desc: '天気・最近のこと',
+    conversations: [
+      {
+        q: "How has your day been so far?",
+        phrases: [
+          { en: "Pretty good, thanks for asking.", note: "まあまあ→ pretty good" },
+          { en: "It's been a long day.", note: "長い一日→ a long day" },
+          { en: "Not great, I didn't sleep well.", note: "よく寝れなかった→ didn't sleep well" }
+        ],
+        point: "\"so far\" は「今のところ」。一日がまだ終わっていないニュアンス。",
+        followUp: "What's the weather like where you are?"
+      },
+      {
+        q: "What's the weather like where you are?",
+        phrases: [
+          { en: "It's been really hot lately.", note: "最近暑い→ been really hot lately" },
+          { en: "It's cloudy but not too cold.", note: "曇り→ cloudy" },
+          { en: "The weather has been all over the place.", note: "不安定→ all over the place" }
+        ],
+        point: "\"all over the place\" は「バラバラ、不安定」。天気以外にも使える万能表現。",
+        followUp: "Has anything interesting happened to you recently?"
+      },
+      {
+        q: "Has anything interesting happened to you recently?",
+        phrases: [
+          { en: "I found a really nice cafe near my place.", note: "見つけた→ found" },
+          { en: "Not really, it's been pretty quiet.", note: "静かだった→ pretty quiet" },
+          { en: "Actually, something funny happened at work.", note: "面白いこと→ something funny" }
+        ],
+        point: "\"something + 形容詞\" の語順に注意。something interesting, nothing special など。",
+        followUp: "Tell me more about that!"
+      },
+      {
+        q: "Tell me more about that!",
+        phrases: [
+          { en: "So basically, what happened was...", note: "つまり→ so basically" },
+          { en: "It's kind of a long story.", note: "長い話→ a long story" },
+          { en: "Well, you know how sometimes...", note: "あるじゃないですか→ you know how ~" }
+        ],
+        point: "話を始めるとき \"So basically...\" は便利な前置き。聞き手の注意を引けます。",
+        followUp: "That's interesting! What happened next?"
+      }
+    ]
+  }
+];
+
+// ─── Error Detection ───
+function detectErrors(text) {
+  const errors = [];
+  const t = text.trim();
+  if (!t || t.length < 3) return errors;
+
+  const rules = [
+    {
+      regex: /\b(ate|had|bought|got|made|want|need|have|saw|found|like|read|watched|played|took|drank|ordered)\s+(hamburger|sandwich|pizza|salad|coffee|beer|tea|cake|cookie|movie|book|game|meeting|party|concert|restaurant|cafe|park|museum|train|bus|car|bike|phone|computer|house|apartment|hotel|class|lesson|course|job|shower|bath|nap|walk|break|day off)\b/i,
+      fix: (m) => {
+        const article = /^[aeiou]/i.test(m[2]) ? 'an' : 'a';
+        return { orig: m[0], fixed: `${m[1]} ${article} ${m[2]}`, note: `「${m[2]}」の前に冠詞「${article}」が必要` };
+      }
+    },
+    {
+      regex: /\b(want|need|try|tried|like|plan|planned|hope|hoped|decide|decided|forget|forgot|promise|promised)\s+(go|eat|drink|buy|see|do|make|get|have|be|take|come|give|tell|say|find|know|think|help|play|work|study|learn|read|write|watch|listen|sleep|run|walk|cook|drive|travel|visit|meet|call|send|start|stop|finish|move|stay|leave)\b/i,
+      check: (m, full) => !new RegExp(`\\b${m[1]}\\s+to\\s+${m[2]}\\b`, 'i').test(full),
+      fix: (m) => ({ orig: m[0], fixed: `${m[1]} to ${m[2]}`, note: `「${m[1]}」の後には「to」が必要` })
+    },
+    {
+      regex: /\b(can't|cannot|couldn't|won't|wouldn't|shouldn't|mustn't|might not|will|would|should|must|can|could|may|might)\s+(went|ate|drank|bought|got|made|took|came|gave|told|said|found|knew|thought|saw|ran|wrote|drove|flew|spoke|slept|woke|broke|chose|forgot|lost|spent|taught|understood|wore|sat|stood|fell|held|met|paid|read|sold|sent|set|shut|kept|left|led|meant|put|showed)\b/i,
+      fix: (m) => {
+        const baseMap = {went:'go',ate:'eat',drank:'drink',bought:'buy',got:'get',made:'make',took:'take',came:'come',gave:'give',told:'tell',said:'say',found:'find',knew:'know',thought:'think',saw:'see',ran:'run',wrote:'write',drove:'drive',flew:'fly',spoke:'speak',slept:'sleep',woke:'wake',broke:'break',chose:'choose',forgot:'forget',lost:'lose',spent:'spend',taught:'teach',understood:'understand',wore:'wear',sat:'sit',stood:'stand',fell:'fall',held:'hold',met:'meet',paid:'pay',read:'read',sold:'sell',sent:'send',set:'set',shut:'shut',kept:'keep',left:'leave',led:'lead',meant:'mean',put:'put',showed:'show'};
+        const base = baseMap[m[2].toLowerCase()] || m[2];
+        return { orig: m[0], fixed: `${m[1]} ${base}`, note: '助動詞の後は原形を使います' };
+      }
+    },
+    {
+      regex: /\bI\s+(thinking|going|doing|eating|working|studying|playing|watching|reading|running|cooking|learning|waiting|trying|looking|living|coming|making|having|getting|sitting|standing|walking|talking|sleeping)\b/i,
+      check: (m, full) => !new RegExp(`\\bI\\s+(am|was|'m)\\s+${m[1]}\\b`, 'i').test(full),
+      fix: (m) => ({ orig: `I ${m[1]}`, fixed: `I'm ${m[1]}`, note: '進行形にはbe動詞（am/is/are）が必要' })
+    },
+    {
+      regex: /\bthere is no many\b/i,
+      fix: () => ({ orig: 'there is no many', fixed: 'there are not many', note: '「多くない」→ there are not many' })
+    },
+    {
+      regex: /\bto there\b/i,
+      fix: () => ({ orig: 'to there', fixed: 'to that', note: '「there」と「that」の使い分けに注意' })
+    },
+    {
+      regex: /\b(the|a|my|our|their|this|that)\s+staffs?\b/i,
+      check: (m, full) => /staff/i.test(full) && !/stuff/i.test(full),
+      fix: (m) => {
+        if (/スタッフ|従業員|社員/.test('') === false) {
+          return null;
+        }
+        return null;
+      }
+    },
+    {
+      regex: /\byesterday I\s+(go|eat|drink|buy|make|take|come|give|tell|say|find|know|think|see|run|write|drive|fly|speak|sleep|meet|have|do|get)\b/i,
+      fix: (m) => {
+        const pastMap = {go:'went',eat:'ate',drink:'drank',buy:'bought',make:'made',take:'took',come:'came',give:'gave',tell:'told',say:'said',find:'found',know:'knew',think:'thought',see:'saw',run:'ran',write:'wrote',drive:'drove',fly:'flew',speak:'spoke',sleep:'slept',meet:'met',have:'had',do:'did',get:'got'};
+        const past = pastMap[m[1].toLowerCase()] || m[1];
+        return { orig: m[0], fixed: `yesterday I ${past}`, note: '「yesterday」があるので過去形を使います' };
+      }
+    },
+    {
+      regex: /\b(last week|last month|last year|last night|last time)\s+I\s+(go|eat|drink|buy|make|take|come|have|do|get|see|meet)\b/i,
+      fix: (m) => {
+        const pastMap = {go:'went',eat:'ate',drink:'drank',buy:'bought',make:'made',take:'took',come:'came',have:'had',do:'did',get:'got',see:'saw',meet:'met'};
+        const past = pastMap[m[2].toLowerCase()] || m[2];
+        return { orig: m[0], fixed: `${m[1]} I ${past}`, note: `「${m[1]}」は過去なので動詞も過去形に` };
+      }
+    }
+  ];
+
+  for (const rule of rules) {
+    const m = t.match(rule.regex);
+    if (m) {
+      if (rule.check && !rule.check(m, t)) continue;
+      const result = rule.fix(m);
+      if (result) errors.push(result);
+    }
+  }
+  return errors;
+}
+
+// ─── State ───
+let state = {
+  tab: 'conversation',
+  topic: null,
+  convIndex: 0,
+  messages: [],
+  phrases: [],
+  reviewIndex: 0,
+  reviewDone: false,
+  started: false
+};
+
+function loadState() {
+  try {
+    const saved = localStorage.getItem('hiro_state');
+    if (saved) {
+      const s = JSON.parse(saved);
+      state.phrases = s.phrases || [];
+    }
+  } catch(e) {}
+}
+function saveState() {
+  try {
+    localStorage.setItem('hiro_state', JSON.stringify({ phrases: state.phrases }));
+  } catch(e) {}
+}
+loadState();
+
+// ─── DOM refs ───
+const $ = id => document.getElementById(id);
+const app = $('app');
+const messagesEl = $('messages');
+const inputEl = $('userInput');
+const sendBtn = $('sendBtn');
+const toast = $('toast');
+
+function showToast(text) {
+  toast.textContent = text;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2000);
+}
+
+// ─── Tab switching ───
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.tab = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    const panelMap = { conversation: 'panelConversation', notebook: 'panelNotebook', review: 'panelReview' };
+    $(panelMap[state.tab]).classList.add('active');
+    if (state.tab === 'notebook') renderNotebook();
+    if (state.tab === 'review') renderReview();
+  });
+});
+
+// ─── Topic Modal ───
+function openTopicModal() {
+  const grid = $('topicGrid');
+  grid.innerHTML = TOPICS.map(t => `
+    <button class="topic-card" data-topic="${t.id}">
+      <span class="topic-card-icon">${t.icon}</span>
+      <span class="topic-card-name">${t.name}</span>
+      <span class="topic-card-desc">${t.desc}</span>
+    </button>
+  `).join('');
+  grid.querySelectorAll('.topic-card').forEach(card => {
+    card.addEventListener('click', () => {
+      selectTopic(card.dataset.topic);
+      $('topicModal').classList.remove('open');
+    });
+  });
+  $('topicModal').classList.add('open');
+}
+
+$('topicModal').addEventListener('click', (e) => {
+  if (e.target === $('topicModal')) $('topicModal').classList.remove('open');
+});
+
+$('startBtn').addEventListener('click', openTopicModal);
+$('newTopicBtn').addEventListener('click', openTopicModal);
+
+function selectTopic(topicId) {
+  const topic = TOPICS.find(t => t.id === topicId);
+  if (!topic) return;
+  state.topic = topic;
+  state.convIndex = 0;
+  state.messages = [];
+  state.started = true;
+
+  $('welcomeScreen').style.display = 'none';
+  const convArea = $('conversationArea');
+  convArea.style.display = 'flex';
+  messagesEl.innerHTML = '';
+
+  addAIQuestion(topic.conversations[0].q);
+  inputEl.focus();
+}
+
+// ─── Messages ───
+function addAIQuestion(text) {
+  const div = document.createElement('div');
+  div.className = 'msg msg-ai';
+  div.innerHTML = `<div class="msg-ai-bubble"><div class="msg-ai-q">${text}</div></div>`;
+  messagesEl.appendChild(div);
+  scrollToBottom();
+}
+
+function addUserMessage(text) {
+  const div = document.createElement('div');
+  div.className = 'msg msg-user';
+  div.textContent = text;
+  messagesEl.appendChild(div);
+  scrollToBottom();
+}
+
+function addAIResponse(userText, conv) {
+  const errors = detectErrors(userText);
+  const div = document.createElement('div');
+  div.className = 'msg msg-ai';
+
+  let affirmText = '';
+  if (/[ぁ-んァ-ヴー一-龠]/.test(userText)) {
+    affirmText = '意味は伝わりました！英語にすると…';
+  } else if (errors.length > 0) {
+    affirmText = '伝わりました！少しだけ直すともっと自然になりますよ。';
+  } else {
+    const affirmOptions = [
+      'いいですね！伝わりました！',
+      'バッチリ伝わりました！',
+      'いい感じです！',
+      '上手に言えていますよ！'
+    ];
+    affirmText = affirmOptions[Math.floor(Math.random() * affirmOptions.length)];
+  }
+
+  let correctionsHTML = '';
+  if (errors.length > 0) {
+    correctionsHTML = errors.map(e => `
+      <div class="msg-correction">
+        <span class="msg-correction-orig">${e.orig}</span> → <span class="msg-correction-fix">${e.fixed}</span>
+        <div class="msg-correction-note">${e.note}</div>
+      </div>
+    `).join('');
+  }
+
+  const phrasesHTML = conv.phrases.map((p, i) => {
+    const saved = state.phrases.some(sp => sp.en === p.en);
+    return `
+      <div class="msg-phrase-item">
+        <div>
+          <div class="msg-phrase-text">${p.en}</div>
+          <div class="msg-phrase-note">${p.note}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const saveButtons = conv.phrases.map((p, i) => {
+    const saved = state.phrases.some(sp => sp.en === p.en);
+    return `<button class="msg-save-btn ${saved ? 'saved' : ''}" data-phrase-idx="${i}">${saved ? '✓ 保存済み' : '💾 保存'}</button>`;
+  }).join('');
+
+  div.innerHTML = `
+    <div class="msg-ai-bubble">
+      <div class="msg-affirm">
+        <span class="msg-affirm-icon">✓</span>
+        <span>${affirmText}</span>
+      </div>
+      ${correctionsHTML}
+      <div class="msg-natural">
+        <div class="msg-natural-label">自然な言い方</div>
+        ${phrasesHTML}
+      </div>
+      <div class="msg-point">💡 ${conv.point}</div>
+      <div class="msg-save-row">${saveButtons}</div>
+      <div class="msg-followup">${conv.followUp}</div>
+    </div>
+  `;
+
+  div.querySelectorAll('.msg-save-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.phraseIdx);
+      const phrase = conv.phrases[idx];
+      if (!state.phrases.some(p => p.en === phrase.en)) {
+        state.phrases.push({ en: phrase.en, note: phrase.note, savedAt: Date.now() });
+        saveState();
+        btn.classList.add('saved');
+        btn.textContent = '✓ 保存済み';
+        showToast('表現をメモ帳に保存しました');
+      }
+    });
+  });
+
+  messagesEl.appendChild(div);
+  scrollToBottom();
+}
+
+function scrollToBottom() {
+  requestAnimationFrame(() => {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  });
+}
+
+// ─── Input handling ───
+inputEl.addEventListener('input', () => {
+  sendBtn.disabled = !inputEl.value.trim();
+  inputEl.style.height = 'auto';
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+});
+
+inputEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    handleSend();
+  }
+});
+
+sendBtn.addEventListener('click', handleSend);
+
+function handleSend() {
+  const text = inputEl.value.trim();
+  if (!text || !state.topic) return;
+
+  addUserMessage(text);
+  inputEl.value = '';
+  inputEl.style.height = 'auto';
+  sendBtn.disabled = true;
+
+  const conv = state.topic.conversations[state.convIndex];
+
+  setTimeout(() => {
+    addAIResponse(text, conv);
+
+    state.convIndex++;
+    if (state.convIndex >= state.topic.conversations.length) {
+      state.convIndex = 0;
+      const otherTopics = TOPICS.filter(t => t.id !== state.topic.id);
+      const next = otherTopics[Math.floor(Math.random() * otherTopics.length)];
+      state.topic = next;
+    }
+  }, 400 + Math.random() * 300);
+}
+
+// ─── Notebook ───
+function renderNotebook() {
+  const panel = $('panelNotebook');
+  if (state.phrases.length === 0) {
+    panel.innerHTML = `
+      <div class="notebook-empty">
+        <div class="notebook-empty-icon">📖</div>
+        <p>まだ表現が保存されていません。<br>会話練習で気になった表現を<br>保存してみましょう。</p>
+      </div>
+    `;
+    return;
+  }
+
+  panel.innerHTML = `
+    <div class="notebook-header">
+      <h2>表現メモ帳</h2>
+      <span class="notebook-count">${state.phrases.length}個</span>
+    </div>
+    <div class="notebook-list" id="notebookList"></div>
+  `;
+
+  const list = $('notebookList');
+  state.phrases.forEach((phrase, i) => {
+    const card = document.createElement('div');
+    card.className = 'phrase-card';
+    card.innerHTML = `
+      <div class="phrase-card-en">${phrase.en}</div>
+      <div class="phrase-card-note">${phrase.note}</div>
+      <div class="phrase-card-actions">
+        <button class="phrase-action example-btn" data-idx="${i}">例文を見る</button>
+        <button class="phrase-action delete" data-idx="${i}">削除</button>
+      </div>
+    `;
+
+    card.querySelector('.example-btn').addEventListener('click', function() {
+      const existing = card.querySelector('.phrase-examples');
+      if (existing) { existing.remove(); return; }
+      const examples = generateExamples(phrase.en);
+      const exDiv = document.createElement('div');
+      exDiv.className = 'phrase-examples';
+      exDiv.innerHTML = examples.map(e => `<p>${e}</p>`).join('');
+      card.appendChild(exDiv);
+    });
+
+    card.querySelector('.delete').addEventListener('click', () => {
+      state.phrases.splice(i, 1);
+      saveState();
+      renderNotebook();
+      showToast('表現を削除しました');
+    });
+
+    list.appendChild(card);
+  });
+}
+
+function generateExamples(phrase) {
+  const lower = phrase.toLowerCase();
+  if (lower.includes('i had')) return [
+    "I had sushi for dinner last night.",
+    "I had a great time at the party.",
+    "I had coffee with a friend this morning."
+  ];
+  if (lower.includes('grabbed')) return [
+    "I grabbed a coffee on my way to work.",
+    "Let me grab my jacket.",
+    "We grabbed lunch at that new place."
+  ];
+  if (lower.includes('leftovers')) return [
+    "We had leftovers from yesterday's dinner.",
+    "I usually bring leftovers for lunch.",
+    "There are some leftovers in the fridge."
+  ];
+  if (lower.includes('it depends')) return [
+    "It depends on the weather.",
+    "It depends on how I feel.",
+    "It depends on the price."
+  ];
+  if (lower.includes('i\'m really into')) return [
+    "I'm really into cooking lately.",
+    "I'm really into this new TV show.",
+    "I'm really into learning languages."
+  ];
+  if (lower.includes('i might')) return [
+    "I might go to the gym later.",
+    "I might try that new restaurant.",
+    "I might take a day off tomorrow."
+  ];
+  if (lower.includes('nothing special')) return [
+    "Nothing special, just a quiet day.",
+    "Nothing special planned for tonight.",
+    "Nothing special happened today."
+  ];
+  if (lower.includes('i\'m planning')) return [
+    "I'm planning to visit my family next month.",
+    "I'm planning a surprise party.",
+    "I'm planning to start running."
+  ];
+  if (lower.includes('homebody')) return [
+    "I'm a bit of a homebody on weekdays.",
+    "She's a homebody, but she loves hiking.",
+    "Even homebodies need fresh air sometimes."
+  ];
+  if (lower.includes('spent')) return [
+    "I spent the whole morning cleaning.",
+    "We spent the afternoon at the beach.",
+    "She spent an hour on the phone."
+  ];
+  if (lower.includes('caught up')) return [
+    "I finally caught up on my emails.",
+    "Let's catch up over coffee sometime.",
+    "I need to catch up on that series."
+  ];
+  if (lower.includes('thinking about')) return [
+    "I'm thinking about changing jobs.",
+    "I'm thinking about getting a dog.",
+    "I've been thinking about it all day."
+  ];
+  if (lower.includes('haven\'t decided')) return [
+    "I haven't decided what to wear yet.",
+    "We haven't decided on a name yet.",
+    "I haven't decided if I should go."
+  ];
+  if (lower.includes('take it easy')) return [
+    "I'm just going to take it easy tonight.",
+    "Take it easy, there's no rush.",
+    "I took it easy over the holidays."
+  ];
+  if (lower.includes('getting there')) return [
+    "My German is getting there slowly.",
+    "The project is getting there.",
+    "I'm getting there, one step at a time."
+  ];
+  if (lower.includes('i\'d love to')) return [
+    "I'd love to visit Iceland someday.",
+    "I'd love to learn more about photography.",
+    "I'd love to try that recipe."
+  ];
+  if (lower.includes('day trip')) return [
+    "Let's take a day trip to the mountains.",
+    "A day trip to the coast sounds fun.",
+    "We did a day trip to Heidelberg."
+  ];
+  if (lower.includes('walking around')) return [
+    "We spent the day walking around the old town.",
+    "I love walking around new cities.",
+    "Walking around the market is always fun."
+  ];
+  if (lower.includes('somewhere')) return [
+    "Let's go somewhere quiet this weekend.",
+    "I want to live somewhere warm.",
+    "We should eat somewhere different tonight."
+  ];
+  if (lower.includes('for the most part')) return [
+    "For the most part, I enjoy my work.",
+    "The weather was nice, for the most part.",
+    "For the most part, the trip went well."
+  ];
+  if (lower.includes('actually')) return [
+    "Actually, I changed my mind.",
+    "It was actually pretty fun.",
+    "I'm actually from Japan, originally."
+  ];
+  if (lower.includes('all over the place')) return [
+    "My schedule has been all over the place.",
+    "The weather is all over the place today.",
+    "My thoughts are all over the place."
+  ];
+  if (lower.includes('so basically')) return [
+    "So basically, we need to start over.",
+    "So basically, the plan is to leave early.",
+    "So basically, I missed the train."
+  ];
+  if (lower.includes('pretty good')) return [
+    "The food was pretty good, actually.",
+    "I'm feeling pretty good today.",
+    "That's a pretty good idea."
+  ];
+  if (lower.includes('not much of')) return [
+    "I'm not much of a morning person.",
+    "I'm not much of a dancer.",
+    "He's not much of a talker."
+  ];
+  if (lower.includes('i\'m pretty good at')) return [
+    "I'm pretty good at multitasking.",
+    "I'm pretty good at remembering names.",
+    "I'm pretty good at making pancakes."
+  ];
+  if (lower.includes('at least')) return [
+    "Try to sleep at least seven hours.",
+    "At least we tried our best.",
+    "I walk at least 30 minutes every day."
+  ];
+  if (lower.includes('since')) return [
+    "I've been here since 2020.",
+    "Since moving here, I've made new friends.",
+    "I've known her since college."
+  ];
+  if (lower.includes('i\'ve always wanted')) return [
+    "I've always wanted to go to New Zealand.",
+    "I've always wanted to learn the guitar.",
+    "I've always wanted to try skydiving."
+  ];
+  if (lower.includes('curious about')) return [
+    "I'm curious about how it works.",
+    "She's curious about Japanese culture.",
+    "I've always been curious about astronomy."
+  ];
+  if (lower.includes('i\'ve been wanting')) return [
+    "I've been wanting to tell you something.",
+    "I've been wanting to try that place.",
+    "I've been wanting to read that book."
+  ];
+  if (lower.includes('rewarding')) return [
+    "Teaching can be very rewarding.",
+    "It's hard work, but very rewarding.",
+    "The most rewarding part is seeing results."
+  ];
+  if (lower.includes('a long day')) return [
+    "It's been a long day at work.",
+    "After a long day, I just want to rest.",
+    "What a long day that was!"
+  ];
+
+  const keyword = phrase.split(' ').filter(w => w.length > 3)[0] || phrase.split(' ')[0];
+  return [
+    `${phrase.replace(/\.$/, '')} every day.`,
+    `I think ${phrase.charAt(0).toLowerCase() + phrase.slice(1).replace(/\.$/, '')} is important.`,
+    `My friend told me: "${phrase}"`
+  ];
+}
+
+// ─── Review ───
+function renderReview() {
+  const panel = $('panelReview');
+  if (state.phrases.length === 0) {
+    panel.innerHTML = `
+      <div class="review-empty">
+        <div class="review-empty-icon">🔄</div>
+        <p>復習する表現がありません。<br>まず会話練習で表現を<br>保存しましょう。</p>
+      </div>
+    `;
+    return;
+  }
+
+  if (state.reviewDone) {
+    panel.innerHTML = `
+      <div class="review-complete">
+        <div class="review-complete-icon">🎉</div>
+        <h3>復習完了！</h3>
+        <p>${state.phrases.length}個の表現を復習しました。<br>この調子で引き出しを増やしていきましょう！</p>
+        <button class="review-restart-btn" id="reviewRestart">もう一度復習する</button>
+      </div>
+    `;
+    $('reviewRestart').addEventListener('click', () => {
+      state.reviewIndex = 0;
+      state.reviewDone = false;
+      renderReview();
+    });
+    return;
+  }
+
+  if (state.reviewIndex >= state.phrases.length) {
+    state.reviewIndex = 0;
+  }
+
+  const phrase = state.phrases[state.reviewIndex];
+  const examples = generateExamples(phrase.en);
+  const progress = ((state.reviewIndex + 1) / state.phrases.length * 100);
+
+  panel.innerHTML = `
+    <div class="review-container">
+      <div class="review-progress">
+        <span>${state.reviewIndex + 1} / ${state.phrases.length}</span>
+        <div class="review-bar"><div class="review-bar-fill" style="width:${progress}%"></div></div>
+      </div>
+      <div class="review-card">
+        <div class="review-card-phrase">${phrase.en}</div>
+        <div class="review-card-note">${phrase.note}</div>
+        <div class="review-examples">
+          <div class="review-examples-label">例文</div>
+          ${examples.map(e => `<p>${e}</p>`).join('')}
+        </div>
+      </div>
+      <div class="review-practice">
+        <div class="review-practice-label">この表現を使って自分の文を作ってみよう</div>
+        <input type="text" class="review-input" id="reviewInput" placeholder="英語で文を入力...">
+        <button class="review-check-btn" id="reviewCheck">チェック</button>
+        <div id="reviewFeedback"></div>
+      </div>
+      <div class="review-nav">
+        <button class="review-nav-btn" id="reviewSkip">スキップ</button>
+        <button class="review-nav-btn primary" id="reviewNext" style="display:none">次へ</button>
+      </div>
+    </div>
+  `;
+
+  $('reviewCheck').addEventListener('click', () => {
+    const input = $('reviewInput').value.trim();
+    if (!input) return;
+
+    const fb = $('reviewFeedback');
+    const keyWords = phrase.en.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !['this','that','with','from','have','been','just','some','your','what','when','where','very','really','about','would','could','should','there','their','more','than','also','into','most','over','only'].includes(w));
+    const inputLower = input.toLowerCase();
+    const hasKeyword = keyWords.some(w => inputLower.includes(w));
+
+    const errors = detectErrors(input);
+
+    if (hasKeyword && errors.length === 0) {
+      fb.innerHTML = `<div class="review-feedback good">いい文ですね！「${phrase.en.split(' ').slice(0, 4).join(' ')}...」のパターンをうまく使えています。</div>`;
+    } else if (hasKeyword && errors.length > 0) {
+      fb.innerHTML = `<div class="review-feedback try-again">パターンは合っています！少し修正：<br>${errors.map(e => `<span style="color:var(--coral);text-decoration:line-through">${e.orig}</span> → <span style="color:var(--jade);font-weight:500">${e.fixed}</span><br><span style="font-size:12px;color:var(--text-secondary)">${e.note}</span>`).join('<br>')}</div>`;
+    } else {
+      fb.innerHTML = `<div class="review-feedback try-again">「${keyWords[0] || phrase.en.split(' ')[1]}」を使ってみましょう。<br>例：${examples[0]}</div>`;
+    }
+
+    $('reviewNext').style.display = '';
+  });
+
+  $('reviewInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') $('reviewCheck').click();
+  });
+
+  function goNext() {
+    state.reviewIndex++;
+    if (state.reviewIndex >= state.phrases.length) {
+      state.reviewDone = true;
+    }
+    renderReview();
+  }
+
+  $('reviewSkip').addEventListener('click', goNext);
+  $('reviewNext').addEventListener('click', goNext);
+}
+
+// ─── Init ───
+if (state.started) {
+  $('welcomeScreen').style.display = 'none';
+  $('conversationArea').style.display = 'flex';
+}
+</script>
