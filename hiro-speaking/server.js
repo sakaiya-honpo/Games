@@ -7,8 +7,9 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const ENV_FILE = path.join(__dirname, '.env');
-const DATA_FILE = path.join(__dirname, 'data.json');
+const EXE_DIR = process.pkg ? path.dirname(process.execPath) : __dirname;
+const ENV_FILE = path.join(EXE_DIR, '.env');
+const DATA_FILE = path.join(EXE_DIR, 'data.json');
 
 function loadEnv() {
   try {
