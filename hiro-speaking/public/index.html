@@ -285,6 +285,14 @@ input, textarea { font-family: inherit; font-size: inherit; }
 @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 .modal-sheet h3 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
 .modal-sheet > p { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
+.personality-selector { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.personality-chip {
+  font-size: 12px; padding: 5px 12px; border-radius: 16px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text-secondary); cursor: pointer; transition: all 0.15s;
+}
+.personality-chip:hover { border-color: var(--jade); color: var(--jade); }
+.personality-chip.active { background: var(--jade); color: #fff; border-color: var(--jade); }
+.personality-label { font-size: 11px; color: var(--text-tertiary); width: 100%; margin-bottom: 2px; }
 .topic-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .topic-card {
   padding: 14px; background: var(--surface-raised); border-radius: 14px;
@@ -586,6 +594,7 @@ input, textarea { font-family: inherit; font-size: inherit; }
     <div class="modal-sheet">
       <h3>トピックを選ぼう</h3>
       <p>気になるトピックから会話を始められます</p>
+      <div class="personality-selector" id="personalitySelector"></div>
       <div class="topic-grid" id="topicGrid"></div>
     </div>
   </div>
@@ -704,9 +713,30 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
 // ─── Topic Modal ───
 let newsItems = [];
+let selectedPersonality = localStorage.getItem('personality') || 'default';
+
+const PERSONALITY_ICONS = { default: '😊', challenger: '🤔', curious: '🧐' };
+
 async function openTopicModal() {
   await loadAppData();
   const grid = $('topicGrid');
+
+  try {
+    const pRes = await api('/api/personalities');
+    const sel = $('personalitySelector');
+    sel.innerHTML = `<span class="personality-label">相手の性格</span>` +
+      (pRes.personalities || []).map(p =>
+        `<button class="personality-chip${p.id === selectedPersonality ? ' active' : ''}" data-pid="${p.id}">${PERSONALITY_ICONS[p.id] || '💬'} ${escHtml(p.name)}</button>`
+      ).join('');
+    sel.querySelectorAll('.personality-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        sel.querySelectorAll('.personality-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        selectedPersonality = chip.dataset.pid;
+        localStorage.setItem('personality', selectedPersonality);
+      });
+    });
+  } catch (e) {}
 
   let newsHTML = '';
   try {
@@ -766,7 +796,7 @@ async function startConversation(topicId, newsHeadline) {
 
   showTyping();
   try {
-    const body = { topicId };
+    const body = { topicId, personality: selectedPersonality };
     if (newsHeadline) body.newsHeadline = newsHeadline;
     const data = await api('/api/start', body);
     removeTyping();

@@ -224,8 +224,39 @@ function saveData(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
+const PERSONALITIES = {
+  default: {
+    name: 'フレンドリー',
+    prompt: 'あなたはフレンドリーな英会話の練習相手です。',
+    startPrompt: 'あなたはフレンドリーな英会話の練習相手です。',
+  },
+  challenger: {
+    name: 'ツッコミ役',
+    prompt: `あなたは親しみやすいが、ユーザーの意見に簡単には同意しない英会話の練習相手です。
+【性格の特徴】
+- ユーザーの意見に対して「本当にそう？」「別の見方もあるよ」と軽くツッコむ
+- 反対意見や別の視点を短く提示して、ユーザーに考え直させる
+- 攻撃的ではなく、友達同士の議論のような雰囲気
+- "Hmm, but don't you think..." / "I see your point, but..." のような表現を使う
+- followUpでは、ユーザーの主張を掘り下げる質問を投げる`,
+    startPrompt: 'あなたは親しみやすいが、相手の意見に簡単には同意しない英会話の練習相手です。軽くツッコミを入れるスタイルで会話します。',
+  },
+  curious: {
+    name: '質問魔',
+    prompt: `あなたは好奇心旺盛で、ユーザーの話を深掘りする英会話の練習相手です。
+【性格の特徴】
+- ユーザーの発言に対して「へぇ、もっと詳しく！」「具体的には？」と掘り下げる
+- 表面的な回答で終わらせず、理由・感情・具体例を引き出す
+- "That's interesting! Can you tell me more about...?" / "What exactly do you mean by...?" のような表現を使う
+- ユーザーが短い答えを返しても、そこから話を広げる
+- followUpでは、ユーザーの答えのどこかを拾って深掘りする質問を投げる`,
+    startPrompt: 'あなたは好奇心旺盛で、相手の話をどんどん深掘りする英会話の練習相手です。詳細や理由を積極的に聞き出します。',
+  },
+};
+
 // ─── Conversation history (in-memory, per topic session) ───
 let conversationMessages = [];
+let currentPersonality = 'default';
 
 // ─── Stage-specific system prompt ───
 function buildSystemPrompt(data, topicId, stageOverride) {
@@ -266,7 +297,8 @@ function buildSystemPrompt(data, topicId, stageOverride) {
 - 紹介するフレーズ：議論表現（From my perspective... / Having said that... / It's worth considering...）`
   };
 
-  return `あなたはフレンドリーな英会話の練習相手です。
+  const p = PERSONALITIES[currentPersonality] || PERSONALITIES.default;
+  return `${p.prompt}
 ユーザーはCEFR ${STAGE_NAMES[stage]}レベルの日本語話者で、ドイツ在住です。
 
 【参考語彙リスト】Oxford 3000 Word List（約3870語）を基準語彙として使用してください。ステージに応じたレベルの語彙を選んでください。リストは /oxford3000.txt で参照可能です。
@@ -320,7 +352,8 @@ function buildStartPrompt(data, topicId, stageOverride) {
   const stage = stageOverride || data.stage;
   const topicInfo = TOPICS[topicId];
 
-  return `あなたはフレンドリーな英会話の練習相手です。
+  const p = PERSONALITIES[currentPersonality] || PERSONALITIES.default;
+  return `${p.startPrompt}
 ユーザーはCEFR ${STAGE_NAMES[stage]}レベルの日本語話者です。
 
 今から「${topicInfo.name}」の話題で会話を始めます。
@@ -336,7 +369,8 @@ ${stage === 5 ? '分析や議論を促す質問にしてください。' : ''}
 
 function buildNewsStartPrompt(data, headline, stageOverride) {
   const stage = stageOverride || data.stage;
-  return `あなたはフレンドリーな英会話の練習相手です。
+  const p = PERSONALITIES[currentPersonality] || PERSONALITIES.default;
+  return `${p.startPrompt}
 ユーザーはCEFR ${STAGE_NAMES[stage]}レベルの日本語話者です。
 
 今日のニュースの話題で会話を始めます。
@@ -423,9 +457,18 @@ app.get('/api/news', async (req, res) => {
   }
 });
 
+app.get('/api/personalities', (req, res) => {
+  const list = Object.entries(PERSONALITIES).map(([id, p]) => ({ id, name: p.name }));
+  res.json({ personalities: list, current: currentPersonality });
+});
+
 app.post('/api/start', async (req, res) => {
-  const { topicId, newsHeadline } = req.body;
+  const { topicId, newsHeadline, personality } = req.body;
   if (topicId !== 'news' && !TOPICS[topicId]) return res.status(400).json({ error: 'invalid topic' });
+
+  if (personality && PERSONALITIES[personality]) {
+    currentPersonality = personality;
+  }
 
   const data = loadData();
   const so = data.stageOverride || null;
