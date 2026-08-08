@@ -89,10 +89,10 @@ input, textarea { font-family: inherit; font-size: inherit; }
 .tab-btn .tab-icon { font-size: 20px; line-height: 1; }
 .tab-btn.active { color: var(--jade); }
 
-.panel { flex: 1; display: none; flex-direction: column; padding-bottom: 62px; overflow-y: auto; }
+.panel { flex: 1; display: none; flex-direction: column; padding-bottom: 62px; overflow-y: auto; height: calc(100vh - 62px); }
 .panel.active { display: flex; }
 
-.messages { flex: 1; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+.messages { flex: 1; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-height: 0; }
 .msg { max-width: 88%; animation: msgIn 0.25s ease-out; }
 @keyframes msgIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .msg-user {
@@ -150,7 +150,7 @@ input, textarea { font-family: inherit; font-size: inherit; }
   display: flex; align-items: flex-start; gap: 8px;
 }
 
-.input-area { padding: 10px 16px 12px; background: var(--bg); border-top: 1px solid var(--border); position: sticky; bottom: 62px; }
+.input-area { padding: 10px 16px 12px; background: var(--bg); border-top: 1px solid var(--border); flex-shrink: 0; }
 .input-row { display: flex; gap: 8px; align-items: flex-end; }
 .input-field {
   flex: 1; resize: none; border: 1px solid var(--border); border-radius: 20px;
@@ -172,6 +172,17 @@ input, textarea { font-family: inherit; font-size: inherit; }
   50% { box-shadow: 0 0 0 10px rgba(199,94,66,0); }
 }
 .mic-btn.unsupported { display: none; }
+
+.focus-toggle { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-tertiary); justify-content: center; margin-top: 2px; }
+.focus-toggle label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.focus-toggle input { width: 14px; height: 14px; accent-color: var(--jade); }
+.focus-mode .msg-ai-bubble .msg-affirm,
+.focus-mode .msg-ai-bubble .msg-correction,
+.focus-mode .msg-ai-bubble .msg-natural,
+.focus-mode .msg-ai-bubble .msg-point,
+.focus-mode .msg-ai-bubble .msg-save-row { display: none; }
+.focus-mode .msg-ai-bubble { background: transparent; box-shadow: none; padding: 8px 0; }
+.focus-mode .msg-followup { border-top: none; padding-top: 0; }
 .send-btn {
   width: 42px; height: 42px; border-radius: 50%; background: var(--jade); color: #fff;
   display: flex; align-items: center; justify-content: center; font-size: 18px;
@@ -541,7 +552,7 @@ input, textarea { font-family: inherit; font-size: inherit; }
       <div class="welcome-progress" id="welcomeProgress"></div>
       <button class="welcome-start" id="startBtn">会話をはじめる</button>
     </div>
-    <div id="conversationArea" style="display:none;flex-direction:column;">
+    <div id="conversationArea" style="display:none;flex-direction:column;flex:1;min-height:0;">
       <div class="messages" id="messages"></div>
       <div class="input-area">
         <div class="input-row">
@@ -554,6 +565,7 @@ input, textarea { font-family: inherit; font-size: inherit; }
           </button>
         </div>
         <div class="input-hint" id="inputHint">🎤 マイクボタンで音声入力 — 完璧じゃなくてOK！</div>
+        <div class="focus-toggle"><label><input type="checkbox" id="focusToggle">会話集中モード（解説なし・自動読み上げ）</label></div>
       </div>
     </div>
   </div>
@@ -861,6 +873,10 @@ function addAIResponse(r) {
 
   bindSpeakBtns(div);
 
+  if (focusMode && r.followUp) {
+    setTimeout(() => speak(r.followUp), 300);
+  }
+
   div.querySelectorAll('.msg-save-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const idx = parseInt(btn.dataset.idx);
@@ -919,6 +935,16 @@ function escHtml(s) {
   if (!s) return '';
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// ─── Focus Mode ───
+let focusMode = localStorage.getItem('focusMode') === 'true';
+$('focusToggle').checked = focusMode;
+if (focusMode) messagesEl.classList.add('focus-mode');
+$('focusToggle').addEventListener('change', () => {
+  focusMode = $('focusToggle').checked;
+  localStorage.setItem('focusMode', focusMode);
+  messagesEl.classList.toggle('focus-mode', focusMode);
+});
 
 // ─── Speech Recognition ───
 const micBtn = $('micBtn');
