@@ -115,9 +115,16 @@ input, textarea { font-family: inherit; font-size: inherit; }
 }
 .msg-natural { display: flex; flex-direction: column; gap: 6px; }
 .msg-natural-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); }
-.msg-phrase-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+.msg-phrase-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; }
 .msg-phrase-text { font-family: var(--font-phrase); font-size: 15px; color: var(--jade); font-weight: 500; }
 .msg-phrase-note { font-size: 12px; color: var(--text-secondary); }
+.speak-btn {
+  width: 28px; height: 28px; border-radius: 50%; background: var(--surface); color: var(--text-secondary);
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  transition: all 0.15s; font-size: 13px; margin-top: 1px;
+}
+.speak-btn:hover { background: var(--jade-soft); color: var(--jade); }
+.speak-btn.speaking { background: var(--jade); color: #fff; }
 .msg-point { font-size: 13px; color: var(--text-secondary); line-height: 1.5; padding-left: 2px; }
 .msg-correction {
   padding: 8px 10px; background: var(--surface); border-radius: 8px; font-size: 13px; line-height: 1.6;
@@ -133,8 +140,14 @@ input, textarea { font-family: inherit; font-size: inherit; }
 .msg-save-btn:hover { background: var(--gold-soft); color: var(--gold); }
 .msg-save-btn.saved { background: var(--gold-soft); color: var(--gold); pointer-events: none; }
 .msg-followup {
-  font-family: var(--font-phrase); font-size: 15px; line-height: 1.5;
-  color: var(--text); padding-top: 4px; border-top: 1px solid var(--border);
+  display: flex; align-items: flex-start; gap: 8px;
+  padding-top: 8px; border-top: 1px solid var(--border);
+}
+.msg-followup-text {
+  font-family: var(--font-phrase); font-size: 15px; line-height: 1.5; color: var(--text); flex: 1;
+}
+.msg-correction-row {
+  display: flex; align-items: flex-start; gap: 8px;
 }
 
 .input-area { padding: 10px 16px 12px; background: var(--bg); border-top: 1px solid var(--border); position: sticky; bottom: 62px; }
@@ -563,11 +576,44 @@ async function startConversation(topicId) {
   }
 }
 
+// ─── Text-to-Speech ───
+function speak(text, btn) {
+  speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = 'en-US';
+  utter.rate = 0.9;
+  const voices = speechSynthesis.getVoices();
+  const preferred = voices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || voices.find(v => v.lang.startsWith('en'));
+  if (preferred) utter.voice = preferred;
+  if (btn) {
+    btn.classList.add('speaking');
+    utter.onend = () => btn.classList.remove('speaking');
+    utter.onerror = () => btn.classList.remove('speaking');
+  }
+  speechSynthesis.speak(utter);
+}
+speechSynthesis.getVoices();
+
+function speakBtnHtml() {
+  return `<button class="speak-btn" title="読み上げ"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></button>`;
+}
+
+function bindSpeakBtns(container) {
+  container.querySelectorAll('.speak-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const text = btn.dataset.text;
+      if (text) speak(text, btn);
+    });
+  });
+}
+
 // ─── Messages ───
 function addAIQuestion(text) {
   const div = document.createElement('div');
   div.className = 'msg msg-ai';
-  div.innerHTML = `<div class="msg-ai-bubble"><div class="msg-ai-q">${escHtml(text)}</div></div>`;
+  div.innerHTML = `<div class="msg-ai-bubble"><div class="msg-followup"><button class="speak-btn" data-text="${escHtml(text)}" title="読み上げ"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></button><span class="msg-followup-text">${escHtml(text)}</span></div></div>`;
+  bindSpeakBtns(div);
+  speak(text);
   messagesEl.appendChild(div);
   scrollToBottom();
 }
@@ -586,16 +632,22 @@ function addAIResponse(r) {
 
   const correctionsHTML = (r.corrections || []).map(c => `
     <div class="msg-correction">
-      <span class="msg-correction-orig">${escHtml(c.orig)}</span> → <span class="msg-correction-fix">${escHtml(c.fixed)}</span>
-      <div class="msg-correction-note">${escHtml(c.note)}</div>
+      <div class="msg-correction-row">
+        <button class="speak-btn" data-text="${escHtml(c.fixed)}" title="読み上げ"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></button>
+        <div><span class="msg-correction-orig">${escHtml(c.orig)}</span> → <span class="msg-correction-fix">${escHtml(c.fixed)}</span>
+        <div class="msg-correction-note">${escHtml(c.note)}</div></div>
+      </div>
     </div>
   `).join('');
 
   const phrasesHTML = (r.phrases || []).map(p => `
-    <div class="msg-phrase-item"><div>
-      <div class="msg-phrase-text">${escHtml(p.en)}</div>
-      <div class="msg-phrase-note">${escHtml(p.note)}</div>
-    </div></div>
+    <div class="msg-phrase-item">
+      <button class="speak-btn" data-text="${escHtml(p.en)}" title="読み上げ"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></button>
+      <div>
+        <div class="msg-phrase-text">${escHtml(p.en)}</div>
+        <div class="msg-phrase-note">${escHtml(p.note)}</div>
+      </div>
+    </div>
   `).join('');
 
   const saveButtons = (r.phrases || []).map((p, i) => {
@@ -610,9 +662,11 @@ function addAIResponse(r) {
       ${(r.phrases && r.phrases.length) ? `<div class="msg-natural"><div class="msg-natural-label">自然な言い方</div>${phrasesHTML}</div>` : ''}
       ${r.point ? `<div class="msg-point">💡 ${escHtml(r.point)}</div>` : ''}
       <div class="msg-save-row">${saveButtons}</div>
-      ${r.followUp ? `<div class="msg-followup">${escHtml(r.followUp)}</div>` : ''}
+      ${r.followUp ? `<div class="msg-followup"><button class="speak-btn" data-text="${escHtml(r.followUp)}" title="読み上げ"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></button><span class="msg-followup-text">${escHtml(r.followUp)}</span></div>` : ''}
     </div>
   `;
+
+  bindSpeakBtns(div);
 
   div.querySelectorAll('.msg-save-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
