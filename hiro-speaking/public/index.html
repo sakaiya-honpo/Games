@@ -297,9 +297,73 @@ input, textarea { font-family: inherit; font-size: inherit; }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 .error-msg { padding: 10px 14px; background: #f5ddd8; color: var(--coral); border-radius: 10px; font-size: 13px; margin: 4px 16px; }
+
+.setup-overlay {
+  position: fixed; inset: 0; background: var(--bg); z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+}
+.setup-card {
+  width: 100%; max-width: 420px; padding: 32px 24px; margin: 16px;
+  background: var(--surface-raised); border-radius: 20px; box-shadow: 0 4px 24px var(--shadow);
+  display: flex; flex-direction: column; gap: 20px;
+}
+.setup-header { text-align: center; }
+.setup-header-icon { font-size: 40px; margin-bottom: 8px; }
+.setup-header h2 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+.setup-header p { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+.setup-field { display: flex; flex-direction: column; gap: 6px; }
+.setup-label { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+.setup-input {
+  width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px;
+  background: var(--input-bg); color: var(--text); font-size: 14px; font-family: monospace;
+  outline: none; transition: border-color 0.15s;
+}
+.setup-input:focus { border-color: var(--jade); }
+.setup-input.error { border-color: var(--coral); }
+.setup-error { font-size: 12px; color: var(--coral); display: none; }
+.setup-error.show { display: block; }
+.setup-submit {
+  width: 100%; padding: 14px; background: var(--jade); color: #fff; border-radius: 14px;
+  font-size: 15px; font-weight: 500; transition: opacity 0.15s;
+}
+.setup-submit:hover { opacity: 0.9; }
+.setup-submit:disabled { opacity: 0.4; }
+.setup-help { font-size: 12px; color: var(--text-tertiary); line-height: 1.6; text-align: center; }
+.setup-help a { color: var(--jade); text-decoration: underline; }
+.setup-divider { height: 1px; background: var(--border); margin: 4px 0; }
+.settings-key-status {
+  display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-tertiary);
+  padding: 6px 10px; background: var(--surface); border-radius: 8px;
+}
+.settings-key-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+}
+.settings-key-dot.active { background: #4CAF50; }
+.settings-key-dot.inactive { background: var(--coral); }
 </style>
 </head>
 <body>
+<div class="setup-overlay" id="setupScreen" style="display:none">
+  <div class="setup-card">
+    <div class="setup-header">
+      <div class="setup-header-icon">🔑</div>
+      <h2>APIキーの設定</h2>
+      <p>会話練習にはClaude APIキーが必要です。<br>Anthropicコンソールで取得できます。</p>
+    </div>
+    <div class="setup-field">
+      <label class="setup-label">ANTHROPIC_API_KEY</label>
+      <input type="password" class="setup-input" id="setupKeyInput" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+      <div class="setup-error" id="setupError"></div>
+    </div>
+    <button class="setup-submit" id="setupSubmit">設定して始める</button>
+    <div class="setup-divider"></div>
+    <div class="setup-help">
+      <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Anthropicコンソール</a>でAPIキーを作成<br>
+      キーはこのサーバーの .env ファイルに保存されます
+    </div>
+  </div>
+</div>
+
 <div class="app">
   <div class="header">
     <div class="header-icon">H</div>
@@ -310,6 +374,9 @@ input, textarea { font-family: inherit; font-size: inherit; }
     <div class="header-actions">
       <button class="header-btn" id="progressBtn" title="進捗を見る">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      </button>
+      <button class="header-btn" id="settingsBtn" title="設定">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
       <button class="header-btn" id="newTopicBtn" title="トピックを変える">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="9" y1="10" x2="15" y2="10"/><line x1="12" y1="7" x2="12" y2="13"/></svg>
@@ -358,6 +425,22 @@ input, textarea { font-family: inherit; font-size: inherit; }
   <div class="modal-overlay" id="progressModal">
     <div class="modal-sheet">
       <div class="progress-content" id="progressContent"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="settingsModal">
+    <div class="modal-sheet">
+      <h3>設定</h3>
+      <p>APIキーの管理</p>
+      <div id="settingsContent" style="display:flex;flex-direction:column;gap:12px;">
+        <div class="settings-key-status" id="keyStatus"></div>
+        <div class="setup-field">
+          <label class="setup-label">APIキーを変更</label>
+          <input type="password" class="setup-input" id="settingsKeyInput" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+          <div class="setup-error" id="settingsError"></div>
+        </div>
+        <button class="setup-submit" id="settingsSave" style="border-radius:12px;padding:10px;">キーを更新</button>
+      </div>
     </div>
   </div>
 
@@ -762,8 +845,80 @@ async function renderReview() {
   $('reviewNext').addEventListener('click', goNext);
 }
 
+// ─── Setup & Settings ───
+async function checkApiKey() {
+  try {
+    const res = await api('/api/config');
+    return res.hasApiKey;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function saveApiKey(key, errorEl, onSuccess) {
+  if (!key || !key.startsWith('sk-')) {
+    errorEl.textContent = 'sk- で始まる有効なキーを入力してください';
+    errorEl.classList.add('show');
+    return;
+  }
+  errorEl.classList.remove('show');
+  try {
+    const res = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: key })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errorEl.textContent = data.error || '保存に失敗しました';
+      errorEl.classList.add('show');
+      return;
+    }
+    onSuccess();
+  } catch (e) {
+    errorEl.textContent = '接続エラー。サーバーが起動しているか確認してください。';
+    errorEl.classList.add('show');
+  }
+}
+
+$('setupSubmit').addEventListener('click', () => {
+  const key = $('setupKeyInput').value.trim();
+  saveApiKey(key, $('setupError'), () => {
+    $('setupScreen').style.display = 'none';
+    showToast('APIキーを設定しました');
+  });
+});
+$('setupKeyInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') $('setupSubmit').click();
+});
+
+$('settingsBtn').addEventListener('click', async () => {
+  const hasKey = await checkApiKey();
+  $('keyStatus').innerHTML = hasKey
+    ? '<span class="settings-key-dot active"></span>APIキー設定済み'
+    : '<span class="settings-key-dot inactive"></span>APIキー未設定';
+  $('settingsKeyInput').value = '';
+  $('settingsError').classList.remove('show');
+  $('settingsModal').classList.add('open');
+});
+$('settingsModal').addEventListener('click', e => { if (e.target === $('settingsModal')) $('settingsModal').classList.remove('open'); });
+$('settingsSave').addEventListener('click', () => {
+  const key = $('settingsKeyInput').value.trim();
+  saveApiKey(key, $('settingsError'), () => {
+    $('settingsModal').classList.remove('open');
+    showToast('APIキーを更新しました');
+  });
+});
+
 // ─── Init ───
-loadAppData();
+async function init() {
+  const hasKey = await checkApiKey();
+  if (!hasKey) {
+    $('setupScreen').style.display = 'flex';
+  }
+  await loadAppData();
+}
+init();
 </script>
 </body>
 </html>

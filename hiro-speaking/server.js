@@ -7,8 +7,25 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const client = new Anthropic();
+const ENV_FILE = path.join(__dirname, '.env');
 const DATA_FILE = path.join(__dirname, 'data.json');
+
+function loadEnv() {
+  try {
+    if (fs.existsSync(ENV_FILE)) {
+      const lines = fs.readFileSync(ENV_FILE, 'utf8').split('\n');
+      for (const line of lines) {
+        const match = line.match(/^([^#=]+)=(.*)$/);
+        if (match) process.env[match[1].trim()] = match[2].trim();
+      }
+    }
+  } catch (e) {}
+}
+loadEnv();
+
+function getClient() {
+  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+}
 
 const STAGE_NAMES = { 1: 'A2', 2: 'A2+', 3: 'B1-', 4: 'B1+', 5: 'B2' };
 const STAGE_THRESHOLDS = [
@@ -203,6 +220,36 @@ function checkStageUp(data) {
 
 // ─── API Routes ───
 
+app.get('/api/config', (req, res) => {
+  const hasKey = !!(process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.startsWith('sk-'));
+  res.json({ hasApiKey: hasKey });
+});
+
+app.post('/api/config', (req, res) => {
+  const { apiKey } = req.body;
+  if (!apiKey || !apiKey.startsWith('sk-')) {
+    return res.status(400).json({ error: 'Invalid API key format. It should start with sk-' });
+  }
+  try {
+    let envContent = '';
+    if (fs.existsSync(ENV_FILE)) {
+      envContent = fs.readFileSync(ENV_FILE, 'utf8');
+      if (envContent.match(/^ANTHROPIC_API_KEY=.*/m)) {
+        envContent = envContent.replace(/^ANTHROPIC_API_KEY=.*/m, `ANTHROPIC_API_KEY=${apiKey}`);
+      } else {
+        envContent += `\nANTHROPIC_API_KEY=${apiKey}`;
+      }
+    } else {
+      envContent = `ANTHROPIC_API_KEY=${apiKey}\nPORT=${process.env.PORT || 3000}\n`;
+    }
+    fs.writeFileSync(ENV_FILE, envContent);
+    process.env.ANTHROPIC_API_KEY = apiKey;
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to save API key' });
+  }
+});
+
 app.get('/api/data', (req, res) => {
   const data = loadData();
   const availableTopics = getAvailableTopicIds(data.stage).map(id => ({
@@ -243,7 +290,7 @@ app.post('/api/start', async (req, res) => {
   conversationMessages = [];
 
   try {
-    const response = await client.messages.create({
+    const response = await getClient().messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 200,
       messages: [{ role: 'user', content: buildStartPrompt(data, topicId) }]
@@ -267,7 +314,7 @@ app.post('/api/chat', async (req, res) => {
   conversationMessages.push({ role: 'user', content: message });
 
   try {
-    const response = await client.messages.create({
+    const response = await getClient().messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 500,
       system: buildSystemPrompt(data, topicId),
