@@ -1233,23 +1233,20 @@ function incrementListeningCount() {
   localStorage.setItem('listeningCount', JSON.stringify(stored));
 }
 
+let lastListeningVoice = null;
 function speakListening(text, btn, rate) {
   speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text);
   utter.lang = 'en-US';
   utter.rate = rate || 0.9;
   const enVoices = getEnglishVoices();
-  const isRandom = localStorage.getItem('voiceRandom') === 'true';
-  if (isRandom && enVoices.length > 0) {
-    utter.voice = enVoices[Math.floor(Math.random() * enVoices.length)];
-  } else {
-    const savedVoice = localStorage.getItem('voicePreference');
-    const match = savedVoice && enVoices.find(v => v.name === savedVoice);
-    if (match) { utter.voice = match; }
-    else {
-      const preferred = enVoices.find(v => v.lang === 'en-US' && v.name.includes('Google')) || enVoices[0];
-      if (preferred) utter.voice = preferred;
-    }
+  if (enVoices.length > 1) {
+    const candidates = enVoices.filter(v => v !== lastListeningVoice);
+    const picked = candidates[Math.floor(Math.random() * candidates.length)];
+    utter.voice = picked;
+    lastListeningVoice = picked;
+  } else if (enVoices.length === 1) {
+    utter.voice = enVoices[0];
   }
   if (btn) {
     btn.classList.add('speaking');
