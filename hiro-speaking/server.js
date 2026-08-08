@@ -63,18 +63,55 @@ const ENV_FILE = path.join(EXE_DIR, '.env');
 const DATA_FILE = path.join(EXE_DIR, 'data.json');
 
 // ─── News RSS ───
-const NEWS_FEEDS = [
-  { url: 'https://feeds.bbci.co.uk/news/world/rss.xml', source: 'BBC' },
-  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml', source: 'NYT' },
-];
-let cachedNews = { items: [], fetchedAt: 0 };
+const NEWS_FEEDS_BY_STAGE = {
+  1: [
+    { url: 'https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml', source: 'BBC', category: 'entertainment' },
+    { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Sports.xml', source: 'NYT', category: 'sports' },
+  ],
+  2: [
+    { url: 'https://feeds.bbci.co.uk/news/science_and_environment/rss.xml', source: 'BBC', category: 'science' },
+    { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Travel.xml', source: 'NYT', category: 'travel' },
+    { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Health.xml', source: 'NYT', category: 'health' },
+  ],
+  3: [
+    { url: 'https://feeds.bbci.co.uk/news/technology/rss.xml', source: 'BBC', category: 'tech' },
+    { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml', source: 'NYT', category: 'tech' },
+    { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Business.xml', source: 'NYT', category: 'business' },
+  ],
+  4: [
+    { url: 'https://feeds.bbci.co.uk/news/world/rss.xml', source: 'BBC', category: 'world' },
+    { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml', source: 'NYT', category: 'world' },
+  ],
+  5: [
+    { url: 'https://feeds.bbci.co.uk/news/world/rss.xml', source: 'BBC', category: 'world' },
+    { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml', source: 'NYT', category: 'world' },
+    { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Opinion.xml', source: 'NYT', category: 'opinion' },
+  ],
+};
 
-async function fetchNews() {
+const CATEGORY_LABELS = {
+  entertainment: '🎬 エンタメ',
+  sports: '⚽ スポーツ',
+  science: '🔬 科学',
+  travel: '✈️ 旅行',
+  health: '🏥 健康',
+  tech: '💻 テクノロジー',
+  business: '💼 ビジネス',
+  world: '🌍 国際',
+  opinion: '💭 オピニオン',
+};
+
+let cachedNews = {};
+
+async function fetchNews(stage) {
   const now = Date.now();
-  if (cachedNews.items.length > 0 && now - cachedNews.fetchedAt < 3600000) return cachedNews.items;
+  const cacheKey = String(stage);
+  const cached = cachedNews[cacheKey];
+  if (cached && cached.items.length > 0 && now - cached.fetchedAt < 3600000) return cached.items;
 
+  const feeds = NEWS_FEEDS_BY_STAGE[stage] || NEWS_FEEDS_BY_STAGE[4];
   const items = [];
-  for (const feed of NEWS_FEEDS) {
+  for (const feed of feeds) {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
@@ -82,20 +119,20 @@ async function fetchNews() {
       clearTimeout(timeout);
       if (!res.ok) continue;
       const xml = await res.text();
-      const itemBlocks = xml.split('<item>').slice(1, 6);
+      const itemBlocks = xml.split('<item>').slice(1, 4);
       for (const block of itemBlocks) {
         const tMatch = block.match(/<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/);
         if (tMatch) {
           const title = tMatch[1].trim().replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"');
-          if (title) items.push({ title, source: feed.source });
+          if (title) items.push({ title, source: feed.source, category: feed.category });
         }
       }
     } catch (e) {}
   }
   if (items.length > 0) {
-    cachedNews = { items, fetchedAt: now };
+    cachedNews[cacheKey] = { items, fetchedAt: now };
   }
-  return cachedNews.items;
+  return items;
 }
 
 function loadEnv() {
@@ -368,8 +405,10 @@ app.post('/api/phrases', (req, res) => {
 
 app.get('/api/news', async (req, res) => {
   try {
-    const items = await fetchNews();
-    res.json({ items });
+    const data = loadData();
+    const stage = parseInt(req.query.stage) || data.stageOverride || data.stage;
+    const items = await fetchNews(stage);
+    res.json({ items, categoryLabels: CATEGORY_LABELS });
   } catch (e) {
     res.json({ items: [] });
   }
