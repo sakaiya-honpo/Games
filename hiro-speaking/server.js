@@ -67,25 +67,33 @@ const NEWS_FEEDS_BY_STAGE = {
   1: [
     { url: 'https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml', source: 'BBC', category: 'entertainment' },
     { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Sports.xml', source: 'NYT', category: 'sports' },
+    { url: 'https://www3.nhk.or.jp/nhkworld/en/news/feeds/', source: 'NHK', category: 'japan' },
   ],
   2: [
     { url: 'https://feeds.bbci.co.uk/news/science_and_environment/rss.xml', source: 'BBC', category: 'science' },
     { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Travel.xml', source: 'NYT', category: 'travel' },
     { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Health.xml', source: 'NYT', category: 'health' },
+    { url: 'https://www3.nhk.or.jp/nhkworld/en/news/feeds/', source: 'NHK', category: 'japan' },
   ],
   3: [
     { url: 'https://feeds.bbci.co.uk/news/technology/rss.xml', source: 'BBC', category: 'tech' },
     { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml', source: 'NYT', category: 'tech' },
     { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Business.xml', source: 'NYT', category: 'business' },
+    { url: 'https://www3.nhk.or.jp/nhkworld/en/news/feeds/', source: 'NHK', category: 'japan' },
+    { url: 'https://japantoday.com/feed', source: 'JapanToday', category: 'japan' },
   ],
   4: [
     { url: 'https://feeds.bbci.co.uk/news/world/rss.xml', source: 'BBC', category: 'world' },
     { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml', source: 'NYT', category: 'world' },
+    { url: 'https://www3.nhk.or.jp/nhkworld/en/news/feeds/', source: 'NHK', category: 'japan' },
+    { url: 'https://japantoday.com/feed', source: 'JapanToday', category: 'japan' },
   ],
   5: [
     { url: 'https://feeds.bbci.co.uk/news/world/rss.xml', source: 'BBC', category: 'world' },
     { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml', source: 'NYT', category: 'world' },
     { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Opinion.xml', source: 'NYT', category: 'opinion' },
+    { url: 'https://www3.nhk.or.jp/nhkworld/en/news/feeds/', source: 'NHK', category: 'japan' },
+    { url: 'https://japantoday.com/feed', source: 'JapanToday', category: 'japan' },
   ],
 };
 
@@ -99,6 +107,7 @@ const CATEGORY_LABELS = {
   business: '💼 ビジネス',
   world: '🌍 国際',
   opinion: '💭 オピニオン',
+  japan: '🇯🇵 日本のニュース',
 };
 
 let cachedNews = {};
