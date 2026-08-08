@@ -147,6 +147,18 @@ input, textarea { font-family: inherit; font-size: inherit; }
 }
 .input-field::placeholder { color: var(--text-tertiary); }
 .input-field:focus { border-color: var(--jade); }
+.mic-btn {
+  width: 42px; height: 42px; border-radius: 50%; background: var(--surface);
+  color: var(--text-secondary); display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0; transition: all 0.15s; position: relative;
+}
+.mic-btn:hover { background: var(--jade-soft); color: var(--jade); }
+.mic-btn.recording { background: var(--coral); color: #fff; animation: micPulse 1.5s infinite; }
+@keyframes micPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(199,94,66,0.4); }
+  50% { box-shadow: 0 0 0 10px rgba(199,94,66,0); }
+}
+.mic-btn.unsupported { display: none; }
 .send-btn {
   width: 42px; height: 42px; border-radius: 50%; background: var(--jade); color: #fff;
   display: flex; align-items: center; justify-content: center; font-size: 18px;
@@ -155,6 +167,7 @@ input, textarea { font-family: inherit; font-size: inherit; }
 .send-btn:disabled { opacity: 0.4; }
 .send-btn:active:not(:disabled) { transform: scale(0.92); }
 .input-hint { font-size: 11px; color: var(--text-tertiary); text-align: center; margin-top: 6px; }
+.input-hint .mic-hint { color: var(--coral); font-weight: 500; }
 
 .welcome {
   flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -396,11 +409,14 @@ input, textarea { font-family: inherit; font-size: inherit; }
       <div class="input-area">
         <div class="input-row">
           <textarea class="input-field" id="userInput" rows="1" placeholder="英語で答えてみよう（日本語混じりでもOK）"></textarea>
+          <button class="mic-btn" id="micBtn" title="音声入力">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          </button>
           <button class="send-btn" id="sendBtn" disabled>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           </button>
         </div>
-        <div class="input-hint">完璧じゃなくてOK！まず言ってみよう</div>
+        <div class="input-hint" id="inputHint">🎤 マイクボタンで音声入力 — 完璧じゃなくてOK！</div>
       </div>
     </div>
   </div>
@@ -657,6 +673,71 @@ function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// ─── Speech Recognition ───
+const micBtn = $('micBtn');
+const inputHint = $('inputHint');
+let recognition = null;
+let isRecording = false;
+
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SpeechRecognition();
+  recognition.lang = 'en-US';
+  recognition.interimResults = true;
+  recognition.continuous = true;
+
+  let finalTranscript = '';
+
+  recognition.onresult = (e) => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) {
+        finalTranscript += e.results[i][0].transcript;
+      } else {
+        interim += e.results[i][0].transcript;
+      }
+    }
+    inputEl.value = finalTranscript + interim;
+    inputEl.dispatchEvent(new Event('input'));
+  };
+
+  recognition.onend = () => {
+    if (isRecording) {
+      isRecording = false;
+      micBtn.classList.remove('recording');
+      inputHint.innerHTML = '🎤 マイクボタンで音声入力 — 完璧じゃなくてOK！';
+      if (inputEl.value.trim()) {
+        sendBtn.disabled = false;
+        sendBtn.focus();
+      }
+    }
+  };
+
+  recognition.onerror = (e) => {
+    isRecording = false;
+    micBtn.classList.remove('recording');
+    if (e.error === 'not-allowed') {
+      inputHint.innerHTML = '<span class="mic-hint">マイクの使用を許可してください</span>';
+    } else if (e.error !== 'aborted') {
+      inputHint.innerHTML = '🎤 マイクボタンで音声入力 — 完璧じゃなくてOK！';
+    }
+  };
+
+  micBtn.addEventListener('click', () => {
+    if (isRecording) {
+      recognition.stop();
+    } else {
+      finalTranscript = inputEl.value;
+      isRecording = true;
+      micBtn.classList.add('recording');
+      inputHint.innerHTML = '<span class="mic-hint">🔴 聞いています... もう一度押して確定</span>';
+      recognition.start();
+    }
+  });
+} else {
+  micBtn.classList.add('unsupported');
+}
+
 // ─── Input ───
 inputEl.addEventListener('input', () => {
   sendBtn.disabled = !inputEl.value.trim() || sending;
@@ -671,6 +752,8 @@ sendBtn.addEventListener('click', handleSend);
 async function handleSend() {
   const text = inputEl.value.trim();
   if (!text || !currentTopicId || sending) return;
+
+  if (isRecording && recognition) { recognition.stop(); }
 
   sending = true;
   sendBtn.disabled = true;
