@@ -342,11 +342,7 @@ input, textarea { font-family: inherit; font-size: inherit; }
   position: fixed; inset: 0; background: var(--bg); z-index: 1100;
   display: flex; align-items: center; justify-content: center;
 }
-.setup-overlay {
-  position: fixed; inset: 0; background: var(--bg); z-index: 1000;
-  display: flex; align-items: center; justify-content: center;
-}
-.setup-card {
+.login-card, .setup-card {
   width: 100%; max-width: 420px; padding: 32px 24px; margin: 16px;
   background: var(--surface-raised); border-radius: 20px; box-shadow: 0 4px 24px var(--shadow);
   display: flex; flex-direction: column; gap: 20px;
@@ -372,16 +368,6 @@ input, textarea { font-family: inherit; font-size: inherit; }
 }
 .setup-submit:hover { opacity: 0.9; }
 .setup-submit:disabled { opacity: 0.4; }
-.setup-help { font-size: 12px; color: var(--text-tertiary); line-height: 1.6; text-align: center; }
-.setup-help a { color: var(--jade); text-decoration: underline; }
-.setup-divider { height: 1px; background: var(--border); margin: 4px 0; }
-.settings-key-status {
-  display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-tertiary);
-  padding: 6px 10px; background: var(--surface); border-radius: 8px;
-}
-.settings-key-dot {
-  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
-}
 .settings-key-dot.active { background: #4CAF50; }
 .settings-key-dot.inactive { background: var(--coral); }
 #voiceRandomToggle:checked + span { background: var(--jade); }
@@ -526,26 +512,6 @@ input, textarea { font-family: inherit; font-size: inherit; }
   </div>
 </div>
 
-<div class="setup-overlay" id="setupScreen" style="display:none">
-  <div class="setup-card">
-    <div class="setup-header">
-      <div class="setup-header-icon">🔑</div>
-      <h2>APIキーの設定</h2>
-      <p>会話練習にはClaude APIキーが必要です。<br>Anthropicコンソールで取得できます。</p>
-    </div>
-    <div class="setup-field">
-      <label class="setup-label">ANTHROPIC_API_KEY</label>
-      <input type="password" class="setup-input" id="setupKeyInput" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
-      <div class="setup-error" id="setupError"></div>
-    </div>
-    <button class="setup-submit" id="setupSubmit">設定して始める</button>
-    <div class="setup-divider"></div>
-    <div class="setup-help">
-      <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Anthropicコンソール</a>でAPIキーを作成<br>
-      キーはこのサーバーの .env ファイルに保存されます
-    </div>
-  </div>
-</div>
 
 <div class="app">
   <div class="header">
@@ -641,14 +607,6 @@ input, textarea { font-family: inherit; font-size: inherit; }
             <option value="5">Stage 5 (B2)</option>
           </select>
         </div>
-        <div style="height:1px;background:var(--border);margin:4px 0;"></div>
-        <div class="settings-key-status" id="keyStatus"></div>
-        <div class="setup-field">
-          <label class="setup-label">APIキーを変更</label>
-          <input type="password" class="setup-input" id="settingsKeyInput" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
-          <div class="setup-error" id="settingsError"></div>
-        </div>
-        <button class="setup-submit" id="settingsSave" style="border-radius:12px;padding:10px;">キーを更新</button>
       </div>
     </div>
   </div>
@@ -1574,60 +1532,8 @@ function updateListeningStats() {
   if (statsEl) statsEl.textContent = `今日のリスニング: ${getListeningCount()}問`;
 }
 
-// ─── Setup & Settings ───
-async function checkApiKey() {
-  try {
-    const res = await api('/api/config');
-    return res.hasApiKey;
-  } catch (e) {
-    return false;
-  }
-}
-
-async function saveApiKey(key, errorEl, onSuccess) {
-  if (!key || !key.startsWith('sk-')) {
-    errorEl.textContent = 'sk- で始まる有効なキーを入力してください';
-    errorEl.classList.add('show');
-    return;
-  }
-  errorEl.classList.remove('show');
-  try {
-    const res = await fetch('/api/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey: key })
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      errorEl.textContent = data.error || '保存に失敗しました';
-      errorEl.classList.add('show');
-      return;
-    }
-    onSuccess();
-  } catch (e) {
-    errorEl.textContent = '接続エラー。サーバーが起動しているか確認してください。';
-    errorEl.classList.add('show');
-  }
-}
-
-$('setupSubmit').addEventListener('click', () => {
-  const key = $('setupKeyInput').value.trim();
-  saveApiKey(key, $('setupError'), () => {
-    $('setupScreen').style.display = 'none';
-    showToast('APIキーを設定しました');
-  });
-});
-$('setupKeyInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') $('setupSubmit').click();
-});
-
+// ─── Settings ───
 $('settingsBtn').addEventListener('click', async () => {
-  const hasKey = await checkApiKey();
-  $('keyStatus').innerHTML = hasKey
-    ? '<span class="settings-key-dot active"></span>APIキー設定済み'
-    : '<span class="settings-key-dot inactive"></span>APIキー未設定';
-  $('settingsKeyInput').value = '';
-  $('settingsError').classList.remove('show');
   const voiceSel = $('voiceSelect');
   const enVoices = getEnglishVoices();
   const savedVoice = localStorage.getItem('voicePreference') || '';
@@ -1652,13 +1558,6 @@ $('stageOverrideSelect').addEventListener('change', async () => {
   showToast(so ? `練習レベルをStage ${so}に設定しました` : '練習レベルを自動に戻しました');
 });
 $('settingsModal').addEventListener('click', e => { if (e.target === $('settingsModal')) $('settingsModal').classList.remove('open'); });
-$('settingsSave').addEventListener('click', () => {
-  const key = $('settingsKeyInput').value.trim();
-  saveApiKey(key, $('settingsError'), () => {
-    $('settingsModal').classList.remove('open');
-    showToast('APIキーを更新しました');
-  });
-});
 
 // ─── Login ───
 $('loginSubmit').addEventListener('click', async () => {
@@ -1686,10 +1585,6 @@ async function init() {
       return;
     }
   } catch (e) {}
-  const hasKey = await checkApiKey();
-  if (!hasKey) {
-    $('setupScreen').style.display = 'flex';
-  }
   await loadAppData();
   checkGoogleTts();
 }
