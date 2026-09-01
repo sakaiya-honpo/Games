@@ -13,6 +13,18 @@ VOICEVOXエンジンを起動しておく（ https://voicevox.hiroshiba.jp/ ）
 
 ## 使い方
 
+### GUI（おすすめ）
+
+```bash
+python gui.py
+```
+
+- ファイルをドラッグ&ドロップ（tkinterdnd2インストール時）またはクリックで選択
+- 話者キャラ・Whisperモデル等をGUIで設定
+- ログがリアルタイム表示される
+
+### CLI
+
 ```bash
 # 基本（ずんだもん + 四国めたん）
 python convert.py recording.mp4 -o output.wav

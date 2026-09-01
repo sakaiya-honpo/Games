@@ -4,3 +4,4 @@ torch
 torchaudio
 requests
 pydub
+tkinterdnd2
