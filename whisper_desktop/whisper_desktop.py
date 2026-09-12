@@ -7,7 +7,7 @@ import queue
 import wave
 import tempfile
 import os
-import sys
+import time
 
 import numpy as np
 import sounddevice as sd
@@ -18,6 +18,14 @@ try:
 except ImportError:
     import whisper
     BACKEND = "openai-whisper"
+
+
+def format_timestamp(seconds):
+    m, s = divmod(int(seconds), 60)
+    h, m = divmod(m, 60)
+    if h:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m}:{s:02d}"
 
 
 class WhisperDesktop:
@@ -37,14 +45,16 @@ class WhisperDesktop:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Whisper Desktop")
-        self.root.geometry("700x560")
+        self.root.geometry("750x600")
         self.root.minsize(500, 400)
 
         self.model = None
         self.model_name = None
         self.recording = False
+        self.cancel_flag = False
         self.audio_frames = []
         self.msg_queue = queue.Queue()
+        self.transcribe_start = 0
 
         self._build_ui()
         self._poll_queue()
@@ -80,32 +90,55 @@ class WhisperDesktop:
         self.file_btn.pack(side=tk.LEFT, padx=4)
         self.file_btn.state(["disabled"])
 
+        self.cancel_btn = ttk.Button(mid, text="⛔ キャンセル", command=self._cancel)
+        self.cancel_btn.pack(side=tk.LEFT, padx=4)
+        self.cancel_btn.state(["disabled"])
+
         self.status_var = tk.StringVar(value="モデルを読み込んでください")
         ttk.Label(mid, textvariable=self.status_var).pack(side=tk.LEFT, padx=12)
+
+        self.timestamp_chk_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(top, text="タイムスタンプ表示",
+                        variable=self.timestamp_chk_var).pack(side=tk.RIGHT, padx=4)
 
         txt_frame = ttk.Frame(self.root, padding=8)
         txt_frame.pack(fill=tk.BOTH, expand=True)
 
         self.text = scrolledtext.ScrolledText(txt_frame, wrap=tk.WORD, font=("Yu Gothic UI", 11))
         self.text.pack(fill=tk.BOTH, expand=True)
+        self.text.tag_configure("timestamp", foreground="#888888", font=("Yu Gothic UI", 9))
 
         bot = ttk.Frame(self.root, padding=8)
         bot.pack(fill=tk.X)
 
         ttk.Button(bot, text="コピー", command=self._copy).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bot, text="テキストのみコピー", command=self._copy_text_only).pack(side=tk.LEFT, padx=4)
         ttk.Button(bot, text="クリア", command=self._clear).pack(side=tk.LEFT, padx=4)
 
         self.progress = ttk.Progressbar(bot, mode="indeterminate", length=120)
         self.progress.pack(side=tk.RIGHT, padx=4)
+
+        self.elapsed_var = tk.StringVar(value="")
+        ttk.Label(bot, textvariable=self.elapsed_var).pack(side=tk.RIGHT, padx=8)
 
     def _poll_queue(self):
         while not self.msg_queue.empty():
             action, data = self.msg_queue.get_nowait()
             if action == "status":
                 self.status_var.set(data)
+            elif action == "segment":
+                ts, text = data
+                if self.timestamp_chk_var.get():
+                    self.text.insert(tk.END, ts, "timestamp")
+                    self.text.insert(tk.END, f" {text}\n")
+                else:
+                    self.text.insert(tk.END, f"{text}\n")
+                self.text.see(tk.END)
             elif action == "text":
                 self.text.insert(tk.END, data + "\n\n")
                 self.text.see(tk.END)
+            elif action == "separator":
+                self.text.insert(tk.END, "\n")
             elif action == "model_loaded":
                 self.rec_btn.state(["!disabled"])
                 self.file_btn.state(["!disabled"])
@@ -114,7 +147,12 @@ class WhisperDesktop:
             elif action == "done":
                 self.file_btn.state(["!disabled"])
                 self.load_btn.state(["!disabled"])
+                self.rec_btn.state(["!disabled"])
+                self.cancel_btn.state(["disabled"])
                 self.progress.stop()
+                self.elapsed_var.set("")
+            elif action == "elapsed":
+                self.elapsed_var.set(data)
         self.root.after(100, self._poll_queue)
 
     def _get_lang_code(self):
@@ -123,6 +161,10 @@ class WhisperDesktop:
             if n == name:
                 return code
         return None
+
+    def _cancel(self):
+        self.cancel_flag = True
+        self.status_var.set("キャンセル中...")
 
     def _load_model(self):
         self.load_btn.state(["disabled"])
@@ -163,13 +205,22 @@ class WhisperDesktop:
             self.stream.stop()
             self.stream.close()
             self.rec_btn.config(text="🎤 録音開始")
-            self.status_var.set("文字起こし中...")
-            self.progress.start(15)
+            self._start_transcription_ui()
             threading.Thread(target=self._transcribe_audio, daemon=True).start()
 
     def _audio_callback(self, indata, frames, time_info, status):
         if self.recording:
             self.audio_frames.append(indata.copy())
+
+    def _start_transcription_ui(self):
+        self.cancel_flag = False
+        self.transcribe_start = time.time()
+        self.rec_btn.state(["disabled"])
+        self.file_btn.state(["disabled"])
+        self.load_btn.state(["disabled"])
+        self.cancel_btn.state(["!disabled"])
+        self.status_var.set("文字起こし中...")
+        self.progress.start(15)
 
     def _transcribe_audio(self):
         if not self.audio_frames:
@@ -178,6 +229,7 @@ class WhisperDesktop:
             return
 
         audio = np.concatenate(self.audio_frames, axis=0).flatten()
+        duration = len(audio) / self.SAMPLE_RATE
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             tmp_path = f.name
             with wave.open(f, "wb") as wf:
@@ -187,7 +239,7 @@ class WhisperDesktop:
                 wf.writeframes((audio * 32767).astype(np.int16).tobytes())
 
         try:
-            self._transcribe_file(tmp_path)
+            self._transcribe_file(tmp_path, duration)
         finally:
             os.unlink(tmp_path)
 
@@ -201,39 +253,75 @@ class WhisperDesktop:
         )
         if not path:
             return
-        self.file_btn.state(["disabled"])
-        self.load_btn.state(["disabled"])
-        self.rec_btn.state(["disabled"])
-        self.status_var.set("文字起こし中...")
-        self.progress.start(15)
-        threading.Thread(target=self._transcribe_file, args=(path,), daemon=True).start()
+        self._start_transcription_ui()
+        threading.Thread(target=self._transcribe_file, args=(path, None), daemon=True).start()
 
-    def _transcribe_file(self, path):
+    def _transcribe_file(self, path, duration=None):
         lang = self._get_lang_code()
+        seg_count = 0
         try:
             if BACKEND == "faster-whisper":
                 kwargs = {}
                 if lang:
                     kwargs["language"] = lang
                 segments, info = self.model.transcribe(path, **kwargs)
-                text = "".join(seg.text for seg in segments).strip()
+                audio_duration = info.duration if hasattr(info, 'duration') else duration
+
+                for seg in segments:
+                    if self.cancel_flag:
+                        self.msg_queue.put(("status", "キャンセルしました"))
+                        self.msg_queue.put(("separator", None))
+                        break
+
+                    ts = f"[{format_timestamp(seg.start)} → {format_timestamp(seg.end)}]"
+                    self.msg_queue.put(("segment", (ts, seg.text.strip())))
+                    seg_count += 1
+
+                    elapsed = time.time() - self.transcribe_start
+                    progress_str = f"経過: {format_timestamp(elapsed)}"
+                    if audio_duration and seg.end > 0:
+                        pct = min(seg.end / audio_duration * 100, 100)
+                        progress_str += f" | 進捗: {pct:.0f}%"
+                        if pct > 0:
+                            eta = elapsed / pct * (100 - pct)
+                            progress_str += f" | 残り約{format_timestamp(eta)}"
+                    self.msg_queue.put(("elapsed", progress_str))
+                    self.msg_queue.put(("status", f"文字起こし中... ({seg_count}セグメント)"))
+                else:
+                    if seg_count > 0:
+                        elapsed = time.time() - self.transcribe_start
+                        self.msg_queue.put(("separator", None))
+                        self.msg_queue.put(("status",
+                            f"完了 - {seg_count}セグメント ({format_timestamp(elapsed)})"))
+                    else:
+                        self.msg_queue.put(("status", "テキストが検出されませんでした"))
             else:
                 kwargs = {}
                 if lang:
                     kwargs["language"] = lang
                 result = self.model.transcribe(path, **kwargs)
-                text = result["text"].strip()
 
-            if text:
-                self.msg_queue.put(("text", text))
-                self.msg_queue.put(("status", "完了"))
-            else:
-                self.msg_queue.put(("status", "テキストが検出されませんでした"))
+                for seg in result.get("segments", []):
+                    if self.cancel_flag:
+                        self.msg_queue.put(("status", "キャンセルしました"))
+                        break
+                    ts = f"[{format_timestamp(seg['start'])} → {format_timestamp(seg['end'])}]"
+                    self.msg_queue.put(("segment", (ts, seg["text"].strip())))
+                    seg_count += 1
+
+                if not self.cancel_flag:
+                    elapsed = time.time() - self.transcribe_start
+                    self.msg_queue.put(("separator", None))
+                    if seg_count > 0:
+                        self.msg_queue.put(("status",
+                            f"完了 - {seg_count}セグメント ({format_timestamp(elapsed)})"))
+                    else:
+                        self.msg_queue.put(("status", "テキストが検出されませんでした"))
+
         except Exception as e:
             self.msg_queue.put(("status", f"エラー: {e}"))
 
         self.msg_queue.put(("done", None))
-        self.rec_btn.state(["!disabled"])
 
     def _copy(self):
         text = self.text.get("1.0", tk.END).strip()
@@ -241,6 +329,25 @@ class WhisperDesktop:
             self.root.clipboard_clear()
             self.root.clipboard_append(text)
             self.status_var.set("コピーしました")
+
+    def _copy_text_only(self):
+        content = self.text.get("1.0", tk.END).strip()
+        lines = []
+        for line in content.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("[") and "→" in stripped:
+                idx = stripped.find("]")
+                if idx >= 0:
+                    lines.append(stripped[idx+1:].strip())
+                else:
+                    lines.append(stripped)
+            elif stripped:
+                lines.append(stripped)
+        text = "\n".join(lines)
+        if text:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            self.status_var.set("テキストのみコピーしました")
 
     def _clear(self):
         self.text.delete("1.0", tk.END)
