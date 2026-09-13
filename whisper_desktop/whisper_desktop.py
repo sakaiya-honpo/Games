@@ -6,11 +6,18 @@ import threading
 import queue
 import os
 import time
+import json
 
 from faster_whisper import WhisperModel
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
+
+SPEED_FACTORS = {
+    "tiny": 0.3, "base": 0.5, "small": 1.0,
+    "medium": 2.5, "large-v3": 5.0,
+}
+HOTWORDS_FILE = "hotwords.txt"
 
 
 def format_ts(seconds):
@@ -28,6 +35,20 @@ def format_srt_ts(seconds):
     return f"{int(h):02d}:{int(m):02d}:{int(s):02d},{ms:03d}"
 
 
+def get_audio_duration(path):
+    try:
+        from faster_whisper.audio import decode_audio
+        audio = decode_audio(path)
+        return len(audio) / 16000
+    except Exception:
+        return 0
+
+
+def get_hotwords_path():
+    base = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base, HOTWORDS_FILE)
+
+
 class WhisperDesktop:
     MODELS = ["tiny", "base", "small", "medium", "large-v3"]
     LANGUAGES = [
@@ -39,8 +60,8 @@ class WhisperDesktop:
     def __init__(self):
         self.root = ctk.CTk()
         self.root.title("Whisper Desktop")
-        self.root.geometry("800x620")
-        self.root.minsize(550, 450)
+        self.root.geometry("800x680")
+        self.root.minsize(550, 500)
 
         self.model = None
         self.cancel_flag = False
@@ -48,10 +69,25 @@ class WhisperDesktop:
         self.msg_queue = queue.Queue()
         self.transcribe_start = 0
         self.current_file = None
+        self.hotwords = self._load_hotwords()
 
         self._build_ui()
         self._poll_queue()
         self._auto_load_model()
+
+    def _load_hotwords(self):
+        path = get_hotwords_path()
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                words = [w.strip() for w in f.readlines() if w.strip()]
+                return words
+        return []
+
+    def _save_hotwords(self):
+        path = get_hotwords_path()
+        with open(path, "w", encoding="utf-8") as f:
+            for w in self.hotwords:
+                f.write(w + "\n")
 
     def _build_ui(self):
         top = ctk.CTkFrame(self.root)
@@ -107,6 +143,26 @@ class WhisperDesktop:
         self.progress.pack(fill="x", padx=16, pady=(4, 0))
         self.progress.set(0)
 
+        hw_frame = ctk.CTkFrame(self.root)
+        hw_frame.pack(fill="x", padx=12, pady=4)
+
+        ctk.CTkLabel(hw_frame, text="語彙リスト:",
+                     text_color="#aaaaaa").pack(side="left", padx=(12, 4))
+        self.hw_entry = ctk.CTkEntry(hw_frame, width=300,
+                                     placeholder_text="認識させたい単語（カンマ区切り）")
+        self.hw_entry.pack(side="left", padx=4, pady=6)
+        if self.hotwords:
+            self.hw_entry.insert(0, ", ".join(self.hotwords))
+
+        ctk.CTkButton(hw_frame, text="保存", width=60,
+                      command=self._update_hotwords).pack(side="left", padx=4, pady=6)
+
+        hw_count = len(self.hotwords)
+        self.hw_status_var = ctk.StringVar(
+            value=f"{hw_count}語登録済" if hw_count else "未登録")
+        ctk.CTkLabel(hw_frame, textvariable=self.hw_status_var,
+                     text_color="#888888").pack(side="left", padx=8)
+
         bot = ctk.CTkFrame(self.root)
         bot.pack(fill="x", padx=12, pady=(4, 12))
 
@@ -121,6 +177,16 @@ class WhisperDesktop:
         self.elapsed_var = ctk.StringVar()
         ctk.CTkLabel(bot, textvariable=self.elapsed_var,
                      text_color="#aaaaaa").pack(side="right", padx=12, pady=8)
+
+    def _update_hotwords(self):
+        text = self.hw_entry.get().strip()
+        if text:
+            self.hotwords = [w.strip() for w in text.replace("、", ",").split(",") if w.strip()]
+        else:
+            self.hotwords = []
+        self._save_hotwords()
+        count = len(self.hotwords)
+        self.hw_status_var.set(f"{count}語保存しました" if count else "クリアしました")
 
     def _poll_queue(self):
         while not self.msg_queue.empty():
@@ -174,6 +240,12 @@ class WhisperDesktop:
             self.msg_queue.put(("status", f"読込失敗: {e}"))
         self.msg_queue.put(("ready", None))
 
+    def _estimate_time(self, duration):
+        model_name = self.model_var.get()
+        factor = SPEED_FACTORS.get(model_name, 1.0)
+        estimated = duration * factor
+        return estimated
+
     def _pick_file(self):
         path = filedialog.askopenfilename(filetypes=[
             ("音声/動画", "*.wav *.mp3 *.m4a *.flac *.ogg *.aac *.wma "
@@ -192,7 +264,17 @@ class WhisperDesktop:
         self.progress.configure(mode="determinate")
         self.progress.set(0)
         self.text.delete("1.0", "end")
-        self.status_var.set(f"文字起こし中: {os.path.basename(path)}")
+
+        duration = get_audio_duration(path)
+        est = self._estimate_time(duration) if duration else 0
+        base_msg = f"文字起こし中: {os.path.basename(path)}"
+        if duration:
+            base_msg += f" (音声{format_ts(duration)}"
+            if est:
+                base_msg += f" / 推定{format_ts(est)}"
+            base_msg += ")"
+        self.status_var.set(base_msg)
+
         threading.Thread(target=self._transcribe, args=(path,), daemon=True).start()
 
     def _transcribe(self, path):
@@ -200,6 +282,8 @@ class WhisperDesktop:
         kwargs = {}
         if lang:
             kwargs["language"] = lang
+        if self.hotwords:
+            kwargs["hotwords"] = " ".join(self.hotwords)
         seg_count = 0
         try:
             segments, info = self.model.transcribe(path, **kwargs)
