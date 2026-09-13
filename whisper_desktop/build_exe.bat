@@ -8,6 +8,7 @@ echo exe をビルド中（数分かかります）...
 python -m PyInstaller --noconfirm --onedir --windowed ^
     --name "WhisperDesktop" ^
     --add-data "requirements.txt;." ^
+    --add-data "hotwords;hotwords" ^
     --hidden-import faster_whisper ^
     --hidden-import sounddevice ^
     --hidden-import numpy ^
