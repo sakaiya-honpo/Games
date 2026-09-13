@@ -17,7 +17,12 @@ python -m PyInstaller --noconfirm --onedir --windowed ^
     --collect-all customtkinter ^
     whisper_desktop.py
 echo.
-echo === ビルド完了 ===
-echo dist\WhisperDesktop フォルダ内の WhisperDesktop.exe を実行してください
+echo === デスクトップにコピー中 ===
+set DESKTOP=%USERPROFILE%\Desktop\WhisperDesktop
+if exist "%DESKTOP%" rmdir /s /q "%DESKTOP%"
+xcopy /e /i /q "dist\WhisperDesktop" "%DESKTOP%"
+echo.
+echo === 完了 ===
+echo デスクトップの WhisperDesktop\WhisperDesktop.exe を実行してください
 echo.
 pause
