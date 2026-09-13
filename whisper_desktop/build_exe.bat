@@ -2,10 +2,10 @@
 echo === Whisper Desktop exe ビルド ===
 echo.
 echo 依存パッケージをインストール中...
-pip install faster-whisper customtkinter sounddevice numpy pyinstaller
+python -m pip install faster-whisper customtkinter sounddevice numpy pyinstaller
 echo.
 echo exe をビルド中（数分かかります）...
-pyinstaller --noconfirm --onedir --windowed ^
+python -m PyInstaller --noconfirm --onedir --windowed ^
     --name "WhisperDesktop" ^
     --add-data "requirements.txt;." ^
     --hidden-import faster_whisper ^
