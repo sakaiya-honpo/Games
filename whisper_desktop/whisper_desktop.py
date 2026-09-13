@@ -1,14 +1,16 @@
 """Whisper Desktop - ファイルを選ぶだけで文字起こし"""
 
-import tkinter as tk
-from tkinter import ttk, filedialog, scrolledtext
+import customtkinter as ctk
+from tkinter import filedialog
 import threading
 import queue
 import os
 import time
-import sys
 
 from faster_whisper import WhisperModel
+
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
 
 
 def format_ts(seconds):
@@ -35,10 +37,10 @@ class WhisperDesktop:
     ]
 
     def __init__(self):
-        self.root = tk.Tk()
+        self.root = ctk.CTk()
         self.root.title("Whisper Desktop")
-        self.root.geometry("750x580")
-        self.root.minsize(500, 400)
+        self.root.geometry("800x620")
+        self.root.minsize(550, 450)
 
         self.model = None
         self.cancel_flag = False
@@ -52,63 +54,73 @@ class WhisperDesktop:
         self._auto_load_model()
 
     def _build_ui(self):
-        top = ttk.Frame(self.root, padding=8)
-        top.pack(fill=tk.X)
+        top = ctk.CTkFrame(self.root)
+        top.pack(fill="x", padx=12, pady=(12, 4))
 
-        ttk.Label(top, text="モデル:").pack(side=tk.LEFT)
-        self.model_var = tk.StringVar(value="small")
-        ttk.Combobox(top, textvariable=self.model_var,
-                     values=self.MODELS, width=10, state="readonly"
-                     ).pack(side=tk.LEFT, padx=(4, 12))
+        ctk.CTkLabel(top, text="モデル:").pack(side="left", padx=(12, 4))
+        self.model_var = ctk.StringVar(value="small")
+        ctk.CTkOptionMenu(top, variable=self.model_var,
+                          values=self.MODELS, width=120
+                          ).pack(side="left", padx=(0, 16))
 
-        ttk.Label(top, text="言語:").pack(side=tk.LEFT)
-        self.lang_var = tk.StringVar(value="日本語")
-        ttk.Combobox(top, textvariable=self.lang_var,
-                     values=[n for n, _ in self.LANGUAGES], width=10, state="readonly"
-                     ).pack(side=tk.LEFT, padx=(4, 12))
+        ctk.CTkLabel(top, text="言語:").pack(side="left", padx=(0, 4))
+        self.lang_var = ctk.StringVar(value="日本語")
+        ctk.CTkOptionMenu(top, variable=self.lang_var,
+                          values=[n for n, _ in self.LANGUAGES], width=120
+                          ).pack(side="left", padx=(0, 16))
 
-        ttk.Button(top, text="モデル切替", command=self._auto_load_model).pack(side=tk.LEFT, padx=4)
+        ctk.CTkButton(top, text="モデル切替", width=100,
+                      command=self._auto_load_model).pack(side="left", padx=4)
 
-        mid = ttk.Frame(self.root, padding=8)
-        mid.pack(fill=tk.X)
+        mid = ctk.CTkFrame(self.root)
+        mid.pack(fill="x", padx=12, pady=4)
 
-        self.file_btn = ttk.Button(mid, text="ファイルを選んで文字起こし",
-                                   command=self._pick_file)
-        self.file_btn.pack(side=tk.LEFT, padx=4)
-        self.file_btn.state(["disabled"])
+        self.file_btn = ctk.CTkButton(mid, text="ファイルを選んで文字起こし",
+                                      width=220, command=self._pick_file)
+        self.file_btn.pack(side="left", padx=(12, 4), pady=8)
+        self.file_btn.configure(state="disabled")
 
-        self.cancel_btn = ttk.Button(mid, text="キャンセル", command=self._cancel)
-        self.cancel_btn.pack(side=tk.LEFT, padx=4)
-        self.cancel_btn.state(["disabled"])
+        self.cancel_btn = ctk.CTkButton(mid, text="キャンセル", width=100,
+                                        fg_color="#c0392b", hover_color="#e74c3c",
+                                        command=self._cancel)
+        self.cancel_btn.pack(side="left", padx=4, pady=8)
+        self.cancel_btn.configure(state="disabled")
 
-        self.srt_btn = ttk.Button(mid, text="SRT保存", command=self._save_srt)
-        self.srt_btn.pack(side=tk.LEFT, padx=4)
-        self.srt_btn.state(["disabled"])
+        self.srt_btn = ctk.CTkButton(mid, text="SRT保存", width=100,
+                                     fg_color="#27ae60", hover_color="#2ecc71",
+                                     command=self._save_srt)
+        self.srt_btn.pack(side="left", padx=4, pady=8)
+        self.srt_btn.configure(state="disabled")
 
-        self.status_var = tk.StringVar(value="モデル読み込み中...")
-        ttk.Label(mid, textvariable=self.status_var).pack(side=tk.LEFT, padx=12)
+        self.status_var = ctk.StringVar(value="モデル読み込み中...")
+        ctk.CTkLabel(mid, textvariable=self.status_var,
+                     text_color="#aaaaaa").pack(side="left", padx=12, pady=8)
 
-        txt_frame = ttk.Frame(self.root, padding=8)
-        txt_frame.pack(fill=tk.BOTH, expand=True)
+        txt_frame = ctk.CTkFrame(self.root)
+        txt_frame.pack(fill="both", expand=True, padx=12, pady=4)
 
-        self.text = scrolledtext.ScrolledText(txt_frame, wrap=tk.WORD,
-                                              font=("Yu Gothic UI", 11))
-        self.text.pack(fill=tk.BOTH, expand=True)
-        self.text.tag_configure("ts", foreground="#888888", font=("Yu Gothic UI", 9))
+        self.text = ctk.CTkTextbox(txt_frame, font=("Yu Gothic UI", 13),
+                                   wrap="word", corner_radius=8)
+        self.text.pack(fill="both", expand=True, padx=4, pady=4)
 
-        bot = ttk.Frame(self.root, padding=8)
-        bot.pack(fill=tk.X)
+        self.progress = ctk.CTkProgressBar(self.root, mode="indeterminate")
+        self.progress.pack(fill="x", padx=16, pady=(4, 0))
+        self.progress.set(0)
 
-        ttk.Button(bot, text="コピー", command=self._copy).pack(side=tk.LEFT, padx=4)
-        ttk.Button(bot, text="テキストのみコピー",
-                   command=self._copy_text_only).pack(side=tk.LEFT, padx=4)
-        ttk.Button(bot, text="クリア", command=self._clear).pack(side=tk.LEFT, padx=4)
+        bot = ctk.CTkFrame(self.root)
+        bot.pack(fill="x", padx=12, pady=(4, 12))
 
-        self.elapsed_var = tk.StringVar()
-        ttk.Label(bot, textvariable=self.elapsed_var).pack(side=tk.RIGHT, padx=8)
+        ctk.CTkButton(bot, text="コピー", width=80,
+                      command=self._copy).pack(side="left", padx=(12, 4), pady=8)
+        ctk.CTkButton(bot, text="テキストのみコピー", width=140,
+                      command=self._copy_text_only).pack(side="left", padx=4, pady=8)
+        ctk.CTkButton(bot, text="クリア", width=80, fg_color="#7f8c8d",
+                      hover_color="#95a5a6",
+                      command=self._clear).pack(side="left", padx=4, pady=8)
 
-        self.progress = ttk.Progressbar(bot, mode="indeterminate", length=120)
-        self.progress.pack(side=tk.RIGHT, padx=4)
+        self.elapsed_var = ctk.StringVar()
+        ctk.CTkLabel(bot, textvariable=self.elapsed_var,
+                     text_color="#aaaaaa").pack(side="right", padx=12, pady=8)
 
     def _poll_queue(self):
         while not self.msg_queue.empty():
@@ -117,21 +129,24 @@ class WhisperDesktop:
                 self.status_var.set(data)
             elif action == "segment":
                 ts, txt = data
-                self.text.insert(tk.END, ts, "ts")
-                self.text.insert(tk.END, f" {txt}\n")
-                self.text.see(tk.END)
+                self.text.insert("end", f"{ts} {txt}\n")
+                self.text.see("end")
             elif action == "elapsed":
                 self.elapsed_var.set(data)
             elif action == "ready":
-                self.file_btn.state(["!disabled"])
+                self.file_btn.configure(state="normal")
                 self.progress.stop()
+                self.progress.set(0)
             elif action == "done":
-                self.file_btn.state(["!disabled"])
-                self.cancel_btn.state(["disabled"])
+                self.file_btn.configure(state="normal")
+                self.cancel_btn.configure(state="disabled")
                 if self.segments_data:
-                    self.srt_btn.state(["!disabled"])
+                    self.srt_btn.configure(state="normal")
                 self.progress.stop()
+                self.progress.set(0)
                 self.elapsed_var.set("")
+            elif action == "progress":
+                self.progress.set(data)
         self.root.after(100, self._poll_queue)
 
     def _get_lang(self):
@@ -144,8 +159,9 @@ class WhisperDesktop:
         self.cancel_flag = True
 
     def _auto_load_model(self):
-        self.file_btn.state(["disabled"])
-        self.progress.start(15)
+        self.file_btn.configure(state="disabled")
+        self.progress.configure(mode="indeterminate")
+        self.progress.start()
         self.status_var.set("モデル読み込み中...")
         threading.Thread(target=self._load_worker, daemon=True).start()
 
@@ -168,13 +184,14 @@ class WhisperDesktop:
             return
         self.current_file = path
         self.segments_data = []
-        self.srt_btn.state(["disabled"])
+        self.srt_btn.configure(state="disabled")
         self.cancel_flag = False
         self.transcribe_start = time.time()
-        self.file_btn.state(["disabled"])
-        self.cancel_btn.state(["!disabled"])
-        self.progress.start(15)
-        self.text.delete("1.0", tk.END)
+        self.file_btn.configure(state="disabled")
+        self.cancel_btn.configure(state="normal")
+        self.progress.configure(mode="determinate")
+        self.progress.set(0)
+        self.text.delete("1.0", "end")
         self.status_var.set(f"文字起こし中: {os.path.basename(path)}")
         threading.Thread(target=self._transcribe, args=(path,), daemon=True).start()
 
@@ -206,6 +223,7 @@ class WhisperDesktop:
                     if pct > 0:
                         eta = elapsed / pct * (100 - pct)
                         info_str += f" | 残り約{format_ts(eta)}"
+                    self.msg_queue.put(("progress", pct / 100))
                 self.msg_queue.put(("elapsed", info_str))
                 self.msg_queue.put(("status",
                     f"文字起こし中... {seg_count}セグメント"))
@@ -242,7 +260,7 @@ class WhisperDesktop:
         self.status_var.set(f"SRT保存: {os.path.basename(path)}")
 
     def _copy(self):
-        text = self.text.get("1.0", tk.END).strip()
+        text = self.text.get("1.0", "end").strip()
         if text:
             self.root.clipboard_clear()
             self.root.clipboard_append(text)
@@ -260,9 +278,9 @@ class WhisperDesktop:
             self.status_var.set("テキストのみコピーしました")
 
     def _clear(self):
-        self.text.delete("1.0", tk.END)
+        self.text.delete("1.0", "end")
         self.segments_data = []
-        self.srt_btn.state(["disabled"])
+        self.srt_btn.configure(state="disabled")
         self.status_var.set("クリアしました")
 
     def run(self):
