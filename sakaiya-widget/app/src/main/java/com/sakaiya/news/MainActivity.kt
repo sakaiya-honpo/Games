@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -17,6 +18,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var recycler: RecyclerView
     private lateinit var statusText: TextView
     private lateinit var kwLabel: TextView
+    private lateinit var setupPrompt: LinearLayout
     private val adapter = NewsAdapter()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -26,11 +28,16 @@ class MainActivity : AppCompatActivity() {
         recycler = findViewById(R.id.news_list)
         statusText = findViewById(R.id.main_status)
         kwLabel = findViewById(R.id.keyword_label)
+        setupPrompt = findViewById(R.id.setup_prompt)
 
         recycler.layoutManager = LinearLayoutManager(this)
         recycler.adapter = adapter
 
         findViewById<View>(R.id.btn_settings).setOnClickListener {
+            startActivity(Intent(this, ConfigActivity::class.java))
+        }
+
+        findViewById<View>(R.id.btn_setup).setOnClickListener {
             startActivity(Intent(this, ConfigActivity::class.java))
         }
 
@@ -44,26 +51,29 @@ class MainActivity : AppCompatActivity() {
         val kw = NewsData.getKeyword(this)
         kwLabel.text = kw
 
+        if (NewsData.getApiKey(this).isBlank()) {
+            setupPrompt.visibility = View.VISIBLE
+            recycler.visibility = View.GONE
+            statusText.text = ""
+            return
+        }
+
+        setupPrompt.visibility = View.GONE
+        recycler.visibility = View.VISIBLE
+
         val cached = NewsData.getCachedNews(this)
         if (cached.isNotEmpty()) {
             adapter.items = cached
             adapter.notifyDataSetChanged()
             statusText.text = "最終更新: ${NewsData.getCacheTime(this)}"
-        }
-
-        if (NewsData.getApiKey(this).isBlank()) {
-            statusText.text = "設定からAPIキーを入力してください →"
-        } else if (cached.isEmpty()) {
+        } else {
             loadNews()
         }
     }
 
     private fun loadNews() {
         val apiKey = NewsData.getApiKey(this)
-        if (apiKey.isBlank()) {
-            statusText.text = "設定からAPIキーを入力してください →"
-            return
-        }
+        if (apiKey.isBlank()) return
 
         statusText.text = "読み込み中..."
         thread {
