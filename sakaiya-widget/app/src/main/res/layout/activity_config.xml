@@ -21,7 +21,7 @@
         android:text="Anthropic APIキーを入力してください"
         android:textColor="@color/text2"
         android:textSize="14sp"
-        android:layout_marginBottom="24dp" />
+        android:layout_marginBottom="16dp" />
 
     <EditText
         android:id="@+id/api_key_input"
@@ -32,14 +32,59 @@
         android:textColorHint="@color/text2"
         android:backgroundTint="@color/accent"
         android:inputType="textPassword"
-        android:layout_marginBottom="24dp"
+        android:layout_marginBottom="20dp"
         android:autofillHints="password" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="キーワード"
+        android:textColor="@color/text"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp" />
+
+    <RadioGroup
+        android:id="@+id/keyword_group"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="20dp">
+
+        <RadioButton
+            android:id="@+id/rb_news"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ニュース"
+            android:textColor="@color/text"
+            android:buttonTint="@color/accent"
+            android:checked="true"
+            android:layout_marginEnd="12dp" />
+
+        <RadioButton
+            android:id="@+id/rb_soccer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="サッカー"
+            android:textColor="@color/text"
+            android:buttonTint="@color/accent"
+            android:layout_marginEnd="12dp" />
+
+        <RadioButton
+            android:id="@+id/rb_wrestling"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="プロレス"
+            android:textColor="@color/text"
+            android:buttonTint="@color/accent" />
+
+    </RadioGroup>
 
     <Button
         android:id="@+id/save_btn"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="保存してウィジェットを追加"
+        android:text="保存してウィジェットを更新"
         android:backgroundTint="@color/accent" />
 
     <TextView
