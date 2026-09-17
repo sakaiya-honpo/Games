@@ -12,15 +12,21 @@
         android:theme="@style/Theme.SakaiyaNews">
 
         <activity
-            android:name=".ConfigActivity"
+            android:name=".MainActivity"
             android:exported="true"
-            android:label="Sakaiya News 設定"
+            android:label="Sakaiya News"
             android:theme="@style/Theme.SakaiyaNews">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".ConfigActivity"
+            android:exported="false"
+            android:label="設定"
+            android:theme="@style/Theme.SakaiyaNews" />
 
         <receiver
             android:name=".NewsWidgetProvider"

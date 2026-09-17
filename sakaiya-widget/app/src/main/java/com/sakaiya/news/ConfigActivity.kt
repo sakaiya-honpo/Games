@@ -8,16 +8,16 @@ import android.widget.EditText
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import kotlin.concurrent.thread
 
 class ConfigActivity : AppCompatActivity() {
 
     private var widgetId = AppWidgetManager.INVALID_APPWIDGET_ID
+    private var isWidgetConfig = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setResult(RESULT_CANCELED)
         setContentView(R.layout.activity_config)
 
         widgetId = intent.extras?.getInt(
@@ -25,8 +25,13 @@ class ConfigActivity : AppCompatActivity() {
             AppWidgetManager.INVALID_APPWIDGET_ID
         ) ?: AppWidgetManager.INVALID_APPWIDGET_ID
 
+        isWidgetConfig = widgetId != AppWidgetManager.INVALID_APPWIDGET_ID
+
+        if (isWidgetConfig) {
+            setResult(RESULT_CANCELED)
+        }
+
         val input = findViewById<EditText>(R.id.api_key_input)
-        val status = findViewById<TextView>(R.id.status_text)
         val kwGroup = findViewById<RadioGroup>(R.id.keyword_group)
 
         input.setText(NewsData.getApiKey(this))
@@ -40,7 +45,7 @@ class ConfigActivity : AppCompatActivity() {
         findViewById<Button>(R.id.save_btn).setOnClickListener {
             val key = input.text.toString().trim()
             if (key.isBlank()) {
-                status.text = "APIキーを入力してください"
+                Toast.makeText(this, "APIキーを入力してください", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
@@ -53,35 +58,21 @@ class ConfigActivity : AppCompatActivity() {
 
             NewsData.setApiKey(this, key)
             NewsData.setKeyword(this, keyword)
-            status.text = "「$keyword」のニュース取得中..."
+            Toast.makeText(this, "保存しました", Toast.LENGTH_SHORT).show()
 
-            thread {
-                val items = NewsData.fetchNews(applicationContext)
-                runOnUiThread {
-                    if (items.isNotEmpty()) {
-                        status.text = "${items.size}件のニュースを取得しました"
-                        finishWithWidget()
-                    } else {
-                        status.text = "取得失敗 - APIキーを確認してください"
-                    }
-                }
+            if (isWidgetConfig) {
+                NewsWidgetProvider.updateWidget(
+                    this,
+                    AppWidgetManager.getInstance(this),
+                    widgetId
+                )
+                setResult(RESULT_OK, Intent().putExtra(
+                    AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId
+                ))
+            } else {
+                NewsWidgetProvider.updateAll(this)
             }
+            finish()
         }
-    }
-
-    private fun finishWithWidget() {
-        if (widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
-            NewsWidgetProvider.updateWidget(
-                this,
-                AppWidgetManager.getInstance(this),
-                widgetId
-            )
-            setResult(RESULT_OK, Intent().putExtra(
-                AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId
-            ))
-        } else {
-            NewsWidgetProvider.updateAll(this)
-        }
-        finish()
     }
 }
