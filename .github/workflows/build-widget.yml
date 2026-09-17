@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
     paths: ['sakaiya-widget/**']
+  pull_request:
+    branches: [main]
+    paths: ['sakaiya-widget/**']
   workflow_dispatch:
 
 jobs:
