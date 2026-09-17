@@ -3,17 +3,19 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/bg">
+    android:background="@color/bg"
+    android:fitsSystemWindows="true">
 
+    <!-- Header -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:paddingStart="16dp"
-        android:paddingEnd="8dp"
-        android:paddingTop="12dp"
-        android:paddingBottom="4dp">
+        android:paddingEnd="16dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="8dp">
 
         <TextView
             android:layout_width="0dp"
@@ -30,36 +32,42 @@
             android:layout_height="wrap_content"
             android:textColor="@color/accent"
             android:textSize="14sp"
-            android:textStyle="bold"
-            android:paddingEnd="8dp" />
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Action buttons row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="8dp">
 
         <Button
             android:id="@+id/btn_refresh"
-            style="?android:attr/buttonBarButtonStyle"
-            android:layout_width="48dp"
+            android:layout_width="0dp"
             android:layout_height="48dp"
-            android:text="↻"
-            android:textSize="24sp"
+            android:layout_weight="1"
+            android:text="↻ 更新"
+            android:textSize="16sp"
             android:textColor="@color/text"
-            android:minWidth="48dp"
-            android:minHeight="48dp"
-            android:padding="0dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless" />
+            android:backgroundTint="@color/surface"
+            android:layout_marginEnd="6dp" />
 
         <Button
             android:id="@+id/btn_settings"
-            style="?android:attr/buttonBarButtonStyle"
-            android:layout_width="48dp"
+            android:layout_width="0dp"
             android:layout_height="48dp"
-            android:text="⚙"
-            android:textSize="24sp"
+            android:layout_weight="1"
+            android:text="⚙ 設定"
+            android:textSize="16sp"
             android:textColor="@color/text"
-            android:minWidth="48dp"
-            android:minHeight="48dp"
-            android:padding="0dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless" />
+            android:backgroundTint="@color/surface"
+            android:layout_marginStart="6dp" />
     </LinearLayout>
 
+    <!-- Status -->
     <TextView
         android:id="@+id/main_status"
         android:layout_width="match_parent"
@@ -70,6 +78,43 @@
         android:paddingEnd="16dp"
         android:paddingBottom="8dp" />
 
+    <!-- Setup prompt (shown when no API key) -->
+    <LinearLayout
+        android:id="@+id/setup_prompt"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="32dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="📰"
+            android:textSize="48sp"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ニュースを表示するには\nAPIキーの設定が必要です"
+            android:textColor="@color/text"
+            android:textSize="16sp"
+            android:gravity="center"
+            android:layout_marginBottom="24dp" />
+
+        <Button
+            android:id="@+id/btn_setup"
+            android:layout_width="240dp"
+            android:layout_height="56dp"
+            android:text="⚙ 設定を開く"
+            android:textSize="18sp"
+            android:textColor="@color/text"
+            android:backgroundTint="@color/accent" />
+    </LinearLayout>
+
+    <!-- News list -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/news_list"
         android:layout_width="match_parent"
