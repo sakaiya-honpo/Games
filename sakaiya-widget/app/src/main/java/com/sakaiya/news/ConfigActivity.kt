@@ -5,6 +5,8 @@ import android.content.Intent
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import kotlin.concurrent.thread
@@ -25,8 +27,15 @@ class ConfigActivity : AppCompatActivity() {
 
         val input = findViewById<EditText>(R.id.api_key_input)
         val status = findViewById<TextView>(R.id.status_text)
+        val kwGroup = findViewById<RadioGroup>(R.id.keyword_group)
 
         input.setText(NewsData.getApiKey(this))
+
+        val currentKw = NewsData.getKeyword(this)
+        NewsData.KEYWORDS.forEachIndexed { index, kw ->
+            val rb = kwGroup.getChildAt(index) as? RadioButton
+            rb?.isChecked = (kw == currentKw)
+        }
 
         findViewById<Button>(R.id.save_btn).setOnClickListener {
             val key = input.text.toString().trim()
@@ -35,8 +44,16 @@ class ConfigActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
+            val selectedIdx = kwGroup.indexOfChild(kwGroup.findViewById(kwGroup.checkedRadioButtonId))
+            val keyword = if (selectedIdx in NewsData.KEYWORDS.indices) {
+                NewsData.KEYWORDS[selectedIdx]
+            } else {
+                "ニュース"
+            }
+
             NewsData.setApiKey(this, key)
-            status.text = "ニュース取得中..."
+            NewsData.setKeyword(this, keyword)
+            status.text = "「$keyword」のニュース取得中..."
 
             thread {
                 val items = NewsData.fetchNews(applicationContext)

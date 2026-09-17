@@ -47,7 +47,7 @@ class NewsViewsFactory(private val ctx: Context) : RemoteViewsService.RemoteView
         val fillIntent = Intent().apply {
             data = Uri.parse(item.url)
         }
-        views.setOnClickFillInIntent(R.id.item_title, fillIntent)
+        views.setOnClickFillInIntent(R.id.item_root, fillIntent)
 
         return views
     }

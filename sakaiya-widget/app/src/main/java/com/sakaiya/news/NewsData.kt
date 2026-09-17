@@ -7,7 +7,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -24,6 +23,10 @@ object NewsData {
     private const val KEY_API = "api_key"
     private const val KEY_CACHE = "cache_json"
     private const val KEY_TIME = "cache_time"
+    private const val KEY_KEYWORD = "keyword"
+
+    val KEYWORDS = listOf("ニュース", "サッカー", "プロレス")
+    private val SPORTS_KW = setOf("サッカー", "プロレス")
 
     private val client = OkHttpClient.Builder()
         .callTimeout(java.time.Duration.ofSeconds(35))
@@ -38,13 +41,21 @@ object NewsData {
     fun setApiKey(ctx: Context, key: String) =
         prefs(ctx).edit().putString(KEY_API, key).apply()
 
+    fun getKeyword(ctx: Context): String =
+        prefs(ctx).getString(KEY_KEYWORD, "ニュース") ?: "ニュース"
+
+    fun setKeyword(ctx: Context, kw: String) =
+        prefs(ctx).edit().putString(KEY_KEYWORD, kw).apply()
+
     fun getCachedNews(ctx: Context): List<NewsItem> {
-        val json = prefs(ctx).getString(KEY_CACHE, null) ?: return emptyList()
+        val kw = getKeyword(ctx)
+        val json = prefs(ctx).getString("${KEY_CACHE}_$kw", null) ?: return emptyList()
         return parseItems(JSONArray(json))
     }
 
     fun getCacheTime(ctx: Context): String {
-        val ms = prefs(ctx).getLong(KEY_TIME, 0)
+        val kw = getKeyword(ctx)
+        val ms = prefs(ctx).getLong("${KEY_TIME}_$kw", 0)
         if (ms == 0L) return ""
         return SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ms))
     }
@@ -53,12 +64,9 @@ object NewsData {
         val apiKey = getApiKey(ctx)
         if (apiKey.isBlank()) return emptyList()
 
-        val prompt = """Search for today's top breaking news from each of these sources: Reuters (en), 時事通信 (ja), tagesschau (de), 日経新聞 (ja).
-For each source, find 1-2 of their most important current headlines.
-Search each source in its native language (English for Reuters, Japanese for 時事通信 and 日経新聞, German for tagesschau).
-Return ONLY a JSON array of up to 6 items, newest first.
-Each item: {"title":"...","snippet":"1 sentence summary in the article's original language","source":"publication name","url":"article URL","time":"relative time or date"}.
-Keep titles and snippets in the original language of the article. No markdown, no backticks, just the JSON array."""
+        val kw = getKeyword(ctx)
+        val isSports = kw in SPORTS_KW
+        val prompt = buildPrompt(kw, isSports)
 
         val body = JSONObject().apply {
             put("model", "claude-sonnet-4-6")
@@ -78,7 +86,6 @@ Keep titles and snippets in the original language of the article. No markdown, n
             .addHeader("Content-Type", "application/json")
             .addHeader("x-api-key", apiKey)
             .addHeader("anthropic-version", "2023-06-01")
-            .addHeader("anthropic-dangerous-direct-browser-access", "true")
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
@@ -100,11 +107,38 @@ Keep titles and snippets in the original language of the article. No markdown, n
         val items = parseItems(JSONArray(match.value))
 
         prefs(ctx).edit()
-            .putString(KEY_CACHE, match.value)
-            .putLong(KEY_TIME, System.currentTimeMillis())
+            .putString("${KEY_CACHE}_$kw", match.value)
+            .putLong("${KEY_TIME}_$kw", System.currentTimeMillis())
             .apply()
 
         return items
+    }
+
+    private fun buildPrompt(keyword: String, isSports: Boolean): String {
+        val sources = if (isSports) {
+            "Reuters (en), tagesschau (de)"
+        } else {
+            "Reuters (en), 時事通信 (ja), tagesschau (de), 日経新聞 (ja)"
+        }
+
+        val searchLang = if (isSports) {
+            "Search each source in its native language (English for Reuters, German for tagesschau)."
+        } else {
+            "Search each source in its native language (English for Reuters, Japanese for 時事通信 and 日経新聞, German for tagesschau)."
+        }
+
+        val topic = if (keyword == "ニュース") {
+            "top breaking news"
+        } else {
+            "latest $keyword news"
+        }
+
+        return """Search for today's $topic from each of these sources: $sources.
+For each source, find 1-2 of their most important current headlines about $topic.
+$searchLang
+Return ONLY a JSON array of up to 6 items, newest first.
+Each item: {"title":"...","snippet":"1 sentence summary in the article's original language","source":"publication name","url":"article URL","time":"relative time or date"}.
+Keep titles and snippets in the original language of the article. No markdown, no backticks, just the JSON array."""
     }
 
     private fun parseItems(arr: JSONArray): List<NewsItem> {

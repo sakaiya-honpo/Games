@@ -33,9 +33,12 @@ class NewsWidgetProvider : AppWidgetProvider() {
                 data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
             }
 
+            val kw = NewsData.getKeyword(ctx)
+            val title = if (kw == "ニュース") "Sakaiya News" else "Sakaiya News / $kw"
             val views = RemoteViews(ctx.packageName, R.layout.widget_layout).apply {
                 setRemoteAdapter(R.id.widget_list, intent)
                 setEmptyView(R.id.widget_list, R.id.widget_empty)
+                setTextViewText(R.id.widget_title, title)
                 setTextViewText(R.id.widget_time, NewsData.getCacheTime(ctx))
             }
 
