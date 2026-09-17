@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#FF0B0B0F</color>
+    <color name="surface">#FF16161C</color>
+    <color name="text">#FFE2E2E8</color>
+    <color name="text2">#FF9999A8</color>
+    <color name="accent">#FF6366F1</color>
+    <color name="reuters">#FFFF8C00</color>
+    <color name="jiji">#FF2DD4BF</color>
+    <color name="tagesschau">#FF3B82F6</color>
+    <color name="nikkei">#FFA78BFA</color>
+</resources>
