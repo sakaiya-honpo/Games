@@ -1,7 +1,8 @@
 {
   "name": "Sakaiya News",
   "short_name": "Sakaiya",
-  "start_url": "./sakaiya-news.html",
+  "start_url": "/Games/sakaiya-news.html",
+  "scope": "/Games/",
   "display": "standalone",
   "background_color": "#0b0b0f",
   "theme_color": "#0b0b0f",
