@@ -451,6 +451,7 @@ function removeKw(i) {
 }
 
 load(); renderKws(); renderFeed();
+if(apiKey && (!cache[activeKw]?.length || !feedState[activeKw] || feedState[activeKw] === 'error')) fetchActive();
 if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
 </script>
 </body>
