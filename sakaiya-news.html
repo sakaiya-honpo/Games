@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b0b0f">
+<title>Sakaiya News</title>
+<link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiU2FrYWl5YSBOZXdzIiwic2hvcnRfbmFtZSI6IlNha2FpeWEiLCJzdGFydF91cmwiOiIuIiwiZGlzcGxheSI6InN0YW5kYWxvbmUiLCJiYWNrZ3JvdW5kX2NvbG9yIjoiIzBiMGIwZiIsInRoZW1lX2NvbG9yIjoiIzBiMGIwZiJ9">
+<style>
+:root {
+  --bg: #0b0b0f;
+  --surface: #16161c;
+  --surface2: #1e1e26;
+  --border: #282832;
+  --text: #e6e6ec;
+  --text2: #78788a;
+  --text3: #4e4e5e;
+  --accent: #4a9eff;
+  --tap: rgba(255,255,255,0.04);
+  --reuters: #ff6b35;
+  --jiji: #4ecdc4;
+  --tagesschau: #3b82f6;
+  --nikkei: #a78bfa;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f4f4f7; --surface: #fff; --surface2: #f0f0f4;
+    --border: #dcdce4; --text: #18181f; --text2: #6e6e84;
+    --text3: #a0a0b4; --tap: rgba(0,0,0,0.04);
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f4f4f7; --surface: #fff; --surface2: #f0f0f4;
+  --border: #dcdce4; --text: #18181f; --text2: #6e6e84;
+  --text3: #a0a0b4; --tap: rgba(0,0,0,0.04);
+}
+:root[data-theme="dark"] {
+  --bg: #0b0b0f; --surface: #16161c; --surface2: #1e1e26;
+  --border: #282832; --text: #e6e6ec; --text2: #78788a;
+  --text3: #4e4e5e; --tap: rgba(255,255,255,0.04);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { height: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg); color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  height: 100%; overflow: hidden;
+  padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px) 0;
+}
+
+.app {
+  height: 100%; display: flex; flex-direction: column;
+  max-width: 480px; margin: 0 auto;
+  padding: 0 12px;
+}
+
+.hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 2px 4px; flex-shrink: 0;
+}
+.hdr-title { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; }
+.hdr-right { display: flex; align-items: center; gap: 5px; }
+.hdr-time { font-size: 10px; color: var(--text3); font-variant-numeric: tabular-nums; }
+.hdr-btn {
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text2); width: 30px; height: 30px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 13px;
+}
+.hdr-btn:active { background: var(--surface2); }
+.hdr-btn.spin { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.kw-row {
+  display: flex; gap: 4px; padding: 4px 0 6px;
+  overflow-x: auto; scrollbar-width: none; flex-shrink: 0;
+}
+.kw-row::-webkit-scrollbar { display: none; }
+.kw-tab {
+  padding: 4px 11px; border-radius: 14px; font-size: 11px;
+  font-weight: 600; white-space: nowrap; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text2); flex-shrink: 0; transition: all 0.15s;
+}
+.kw-tab.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+.feed {
+  flex: 1; overflow-y: auto; scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.feed::-webkit-scrollbar { width: 4px; }
+.feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.card {
+  display: flex; gap: 12px; padding: 10px 4px;
+  border-bottom: 1px solid var(--border);
+  text-decoration: none; color: inherit; cursor: pointer;
+}
+.card:active { background: var(--tap); }
+.card-body { flex: 1; min-width: 0; }
+.card-source {
+  font-size: 10px; font-weight: 700; margin-bottom: 3px;
+  text-transform: uppercase; letter-spacing: 0.03em;
+}
+.card-title {
+  font-size: 14px; font-weight: 600; line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden;
+}
+.card-snippet {
+  font-size: 12px; color: var(--text2); line-height: 1.45;
+  margin-top: 3px;
+  display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden;
+}
+.card-time {
+  font-size: 10px; color: var(--text3); margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.feed-msg {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; height: 100%;
+  color: var(--text3); font-size: 13px; text-align: center; gap: 8px;
+  padding: 20px;
+}
+.feed-msg .big { font-size: 32px; }
+.retry-btn, .open-btn {
+  padding: 6px 16px; background: var(--accent); color: #fff;
+  border: none; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;
+  margin-top: 4px;
+}
+.dot-pulse { display: flex; gap: 3px; }
+.dot-pulse span {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--text3); animation: pulse 1.2s ease-in-out infinite;
+}
+.dot-pulse span:nth-child(2) { animation-delay: 0.2s; }
+.dot-pulse span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes pulse {
+  0%,100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+/* Settings panel */
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 20; display: none; }
+.overlay.open { display: block; }
+.panel {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  max-height: 75dvh; background: var(--bg);
+  border-top-left-radius: 16px; border-top-right-radius: 16px;
+  z-index: 21; transform: translateY(100%);
+  transition: transform 0.3s ease; overflow-y: auto;
+  padding: 16px 16px; padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  max-width: 480px; margin: 0 auto;
+}
+.panel.open { transform: translateY(0); }
+.panel-handle { width: 32px; height: 3px; background: var(--border); border-radius: 2px; margin: 0 auto 12px; }
+.panel h2 { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
+.section-label { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 6px; margin-top: 14px; }
+.section-label:first-of-type { margin-top: 0; }
+.chip-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.chip {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 11px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 10px; font-size: 13px;
+}
+.chip .x { cursor: pointer; color: var(--text2); font-size: 15px; line-height: 1; }
+.add-row { display: flex; gap: 6px; }
+.add-row input, .api-input {
+  flex: 1; padding: 8px 12px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 10px;
+  color: var(--text); font-size: 14px; outline: none;
+}
+.api-input { font-family: monospace; font-size: 13px; width: 100%; }
+.add-row input:focus, .api-input:focus { border-color: var(--accent); }
+.add-row button {
+  padding: 8px 16px; background: var(--accent); color: #fff;
+  border: none; border-radius: 10px; font-size: 13px;
+  font-weight: 600; cursor: pointer; flex-shrink: 0;
+}
+.api-status { font-size: 11px; margin-top: 4px; }
+.api-ok { color: #34d399; }
+.api-miss { color: #f87171; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="hdr">
+    <div class="hdr-title">📰 Sakaiya News</div>
+    <div class="hdr-right">
+      <span class="hdr-time" id="time"></span>
+      <button class="hdr-btn" id="refBtn" onclick="fetchActive()" title="更新">🔄</button>
+      <button class="hdr-btn" onclick="togglePanel()" title="設定">⚙️</button>
+    </div>
+  </div>
+  <div class="kw-row" id="kwRow"></div>
+  <div class="feed" id="feed"></div>
+</div>
+
+<div class="overlay" id="overlay" onclick="togglePanel()"></div>
+<div class="panel" id="panel">
+  <div class="panel-handle"></div>
+  <h2>設定</h2>
+
+  <div class="section-label">🔑 API Key</div>
+  <input class="api-input" id="apiKeyInput" type="password" placeholder="sk-ant-..." oninput="saveApiKey()">
+  <div class="api-status" id="apiStatus"></div>
+
+  <div class="section-label" style="margin-top:18px">📂 キーワード</div>
+  <div class="chip-list" id="chipList"></div>
+  <div class="add-row">
+    <input id="newKw" placeholder="キーワード追加">
+    <button onclick="addKw()">追加</button>
+  </div>
+</div>
+
+<script>
+const SOURCES = [
+  { name: 'Reuters', lang: 'en', color: 'var(--reuters)' },
+  { name: '時事通信', lang: 'ja', color: 'var(--jiji)' },
+  { name: 'tagesschau', lang: 'de', color: 'var(--tagesschau)' },
+  { name: '日経新聞', lang: 'ja', color: 'var(--nikkei)' },
+];
+const TOP_NEWS = 'トップニュース';
+const DEFAULT_KW = [TOP_NEWS, 'サッカー', 'ヨーロッパ', '日本', 'ドイツ', 'プロレス'];
+
+let keywords = [], activeKw = TOP_NEWS, cache = {}, feedState = {}, apiKey = '';
+
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+function sourceColor(name) {
+  if (!name) return 'var(--accent)';
+  const n = name.toLowerCase();
+  for (const s of SOURCES) {
+    if (n.includes(s.name.toLowerCase()) || s.name.toLowerCase().includes(n)) return s.color;
+  }
+  return 'var(--accent)';
+}
+
+function load() {
+  try { keywords = JSON.parse(localStorage.getItem('sn-kw')) || [...DEFAULT_KW]; } catch { keywords = [...DEFAULT_KW]; }
+  if (!keywords.includes(TOP_NEWS)) keywords.unshift(TOP_NEWS);
+  try { const c = localStorage.getItem('sn-cache'); if (c) cache = JSON.parse(c); } catch {}
+  try { apiKey = localStorage.getItem('sn-api') || ''; } catch {}
+  activeKw = keywords[0] || TOP_NEWS;
+}
+function save() {
+  try {
+    localStorage.setItem('sn-kw', JSON.stringify(keywords));
+    localStorage.setItem('sn-cache', JSON.stringify(cache));
+  } catch {}
+}
+function saveApiKey() {
+  apiKey = document.getElementById('apiKeyInput').value.trim();
+  try { localStorage.setItem('sn-api', apiKey); } catch {}
+  renderApiStatus();
+}
+function renderApiStatus() {
+  const el = document.getElementById('apiStatus');
+  el.innerHTML = apiKey
+    ? '<span class="api-ok">✓ 設定済み</span>'
+    : '<span class="api-miss">未設定</span>';
+}
+
+function renderKws() {
+  document.getElementById('kwRow').innerHTML = keywords.map(kw => {
+    const escaped = kw.replace(/"/g, '&quot;');
+    return `<div class="kw-tab ${activeKw===kw?'active':''}" onclick="setKw(this)" data-kw="${escaped}">${esc(kw)}</div>`;
+  }).join('');
+}
+
+function renderFeed() {
+  const el = document.getElementById('feed');
+  const state = feedState[activeKw];
+
+  if (state === 'loading') {
+    el.innerHTML = '<div class="feed-msg"><div class="dot-pulse"><span></span><span></span><span></span></div>Web検索中...</div>';
+    return;
+  }
+  if (state === 'no-key') {
+    el.innerHTML = '<div class="feed-msg"><span class="big">🔑</span>⚙️からAPIキーを設定してください<br><button class="open-btn" onclick="togglePanel()">設定を開く</button></div>';
+    return;
+  }
+  if (state === 'error') {
+    el.innerHTML = `<div class="feed-msg">${esc(feedState[activeKw+'_err'] || '取得失敗')}<br><button class="retry-btn" onclick="fetchActive()">再試行</button></div>`;
+    return;
+  }
+
+  const items = cache[activeKw] || [];
+  if (!items.length) {
+    el.innerHTML = '<div class="feed-msg"><span class="big">📰</span>🔄 タップで最新ニュースを取得</div>';
+    return;
+  }
+  el.innerHTML = items.map(it =>
+    `<a class="card" ${it.url ? `href="${esc(it.url)}" target="_blank" rel="noopener"` : ''}>
+      <div class="card-body">
+        <div class="card-source" style="color:${sourceColor(it.source)}">${esc(it.source || '')}</div>
+        <div class="card-title">${esc(it.title)}</div>
+        <div class="card-snippet">${esc(it.snippet || '')}</div>
+        <div class="card-time">${esc(it.time || '')}</div>
+      </div>
+    </a>`
+  ).join('');
+}
+
+function setKw(el) {
+  activeKw = el.dataset.kw;
+  renderKws();
+  if (!cache[activeKw]?.length && feedState[activeKw] !== 'loading') fetchActive();
+  else renderFeed();
+}
+
+function buildPrompt(kw) {
+  const sourceList = SOURCES.map(s => `${s.name} (${s.lang})`).join(', ');
+  const isTop = kw === TOP_NEWS;
+
+  if (isTop) {
+    return `Search for today's top breaking news from each of these sources: ${sourceList}.
+For each source, find 2-3 of their most important current headlines.
+Search each source in its native language (English for Reuters, Japanese for 時事通信 and 日経新聞, German for tagesschau).
+Return ONLY a JSON array of up to 10 items, newest first.
+Each item: {"title":"...","snippet":"1-2 sentence summary in the article's original language","source":"publication name","url":"article URL","time":"relative time or date"}.
+Keep titles and snippets in the original language of the article. No markdown, no backticks, just the JSON array.`;
+  }
+
+  return `Search for the latest news about "${kw}" from each of these sources: ${sourceList}.
+IMPORTANT: Translate the search keyword into each source's language:
+- Reuters (English): translate "${kw}" to English
+- 時事通信 (Japanese): use "${kw}" in Japanese
+- tagesschau (German): translate "${kw}" to German
+- 日経新聞 (Japanese): use "${kw}" in Japanese
+Find 2-3 articles per source. Return ONLY a JSON array of up to 10 items, newest first.
+Each item: {"title":"...","snippet":"1-2 sentence summary in the article's original language","source":"publication name","url":"article URL","time":"relative time or date"}.
+Keep titles and snippets in the original language of the article. No markdown, no backticks, just the JSON array.`;
+}
+
+async function fetchActive() {
+  if (!activeKw) return;
+  if (!apiKey) {
+    feedState[activeKw] = 'no-key';
+    renderFeed();
+    return;
+  }
+
+  feedState[activeKw] = 'loading';
+  renderFeed();
+  const btn = document.getElementById('refBtn');
+  btn.classList.add('spin');
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 2000,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{ role: 'user', content: buildPrompt(activeKw) }],
+      }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error?.message || `HTTP ${resp.status}`);
+    }
+
+    const data = await resp.json();
+    const textParts = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+    let parsed = [];
+    try {
+      const cleaned = textParts.replace(/```json|```/g, '').trim();
+      const m = cleaned.match(/\[[\s\S]*\]/);
+      if (m) parsed = JSON.parse(m[0]);
+    } catch {}
+
+    cache[activeKw] = parsed.slice(0, 12);
+    feedState[activeKw] = 'done';
+    document.getElementById('time').textContent =
+      new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    save();
+  } catch (e) {
+    feedState[activeKw] = 'error';
+    feedState[activeKw+'_err'] = e.message || '取得失敗';
+  }
+
+  btn.classList.remove('spin');
+  renderFeed();
+}
+
+function togglePanel() {
+  const p = document.getElementById('panel');
+  const o = document.getElementById('overlay');
+  const open = p.classList.contains('open');
+  if (open) { p.classList.remove('open'); o.classList.remove('open'); }
+  else {
+    p.classList.add('open'); o.classList.add('open');
+    document.getElementById('apiKeyInput').value = apiKey;
+    renderApiStatus(); renderChips();
+  }
+}
+function renderChips() {
+  document.getElementById('chipList').innerHTML = keywords.map((kw, i) =>
+    kw === TOP_NEWS
+      ? `<span class="chip" style="opacity:0.6">${esc(kw)} (固定)</span>`
+      : `<span class="chip">${esc(kw)}<span class="x" onclick="removeKw(${i})">×</span></span>`
+  ).join('');
+}
+function addKw() {
+  const input = document.getElementById('newKw');
+  const v = input.value.trim();
+  if (!v || keywords.includes(v)) return;
+  keywords.push(v);
+  input.value = '';
+  save(); renderChips(); renderKws();
+}
+function removeKw(i) {
+  if (keywords[i] === TOP_NEWS) return;
+  const removed = keywords.splice(i, 1)[0];
+  if (activeKw === removed) activeKw = keywords[0] || TOP_NEWS;
+  save(); renderChips(); renderKws(); renderFeed();
+}
+
+load(); renderKws(); renderFeed();
+</script>
+</body>
+</html>
