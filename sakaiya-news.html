@@ -230,6 +230,8 @@ const SOURCES = [
 ];
 const TOP_NEWS = 'トップニュース';
 const DEFAULT_KW = [TOP_NEWS, 'サッカー', 'ヨーロッパ', '日本', 'ドイツ', 'プロレス'];
+const SPORTS_KW = ['サッカー', 'プロレス'];
+const SPORTS_SOURCES = SOURCES.filter(s => s.name === 'Reuters' || s.name === 'tagesschau');
 
 let keywords = [], activeKw = TOP_NEWS, cache = {}, feedState = {}, apiKey = '';
 
@@ -322,26 +324,34 @@ function setKw(el) {
 }
 
 function buildPrompt(kw) {
-  const sourceList = SOURCES.map(s => `${s.name} (${s.lang})`).join(', ');
+  const isSports = SPORTS_KW.includes(kw);
+  const srcs = isSports ? SPORTS_SOURCES : SOURCES;
+  const sourceList = srcs.map(s => `${s.name} (${s.lang})`).join(', ');
   const isTop = kw === TOP_NEWS;
+  const perSource = isTop ? '1-2' : '1-2';
+  const total = isTop ? 6 : (isSports ? 4 : 6);
 
   if (isTop) {
     return `Search for today's top breaking news from each of these sources: ${sourceList}.
-For each source, find 2-3 of their most important current headlines.
+For each source, find ${perSource} of their most important current headlines.
 Search each source in its native language (English for Reuters, Japanese for 時事通信 and 日経新聞, German for tagesschau).
-Return ONLY a JSON array of up to 10 items, newest first.
-Each item: {"title":"...","snippet":"1-2 sentence summary in the article's original language","source":"publication name","url":"article URL","time":"relative time or date"}.
+Return ONLY a JSON array of up to ${total} items, newest first.
+Each item: {"title":"...","snippet":"1 sentence summary in the article's original language","source":"publication name","url":"article URL","time":"relative time or date"}.
 Keep titles and snippets in the original language of the article. No markdown, no backticks, just the JSON array.`;
   }
 
+  const langInstructions = srcs.map(s => {
+    const action = s.lang === 'ja' ? `use "${kw}" in Japanese` :
+                   s.lang === 'en' ? `translate "${kw}" to English` :
+                   `translate "${kw}" to German`;
+    return `- ${s.name} (${s.lang}): ${action}`;
+  }).join('\n');
+
   return `Search for the latest news about "${kw}" from each of these sources: ${sourceList}.
 IMPORTANT: Translate the search keyword into each source's language:
-- Reuters (English): translate "${kw}" to English
-- 時事通信 (Japanese): use "${kw}" in Japanese
-- tagesschau (German): translate "${kw}" to German
-- 日経新聞 (Japanese): use "${kw}" in Japanese
-Find 2-3 articles per source. Return ONLY a JSON array of up to 10 items, newest first.
-Each item: {"title":"...","snippet":"1-2 sentence summary in the article's original language","source":"publication name","url":"article URL","time":"relative time or date"}.
+${langInstructions}
+Find ${perSource} articles per source. Return ONLY a JSON array of up to ${total} items, newest first.
+Each item: {"title":"...","snippet":"1 sentence summary in the article's original language","source":"publication name","url":"article URL","time":"relative time or date"}.
 Keep titles and snippets in the original language of the article. No markdown, no backticks, just the JSON array.`;
 }
 
@@ -359,8 +369,11 @@ async function fetchActive() {
   btn.classList.add('spin');
 
   try {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 30000);
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
+      signal: ac.signal,
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
@@ -369,11 +382,12 @@ async function fetchActive() {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 2000,
+        max_tokens: 1200,
         tools: [{ type: 'web_search_20250305', name: 'web_search' }],
         messages: [{ role: 'user', content: buildPrompt(activeKw) }],
       }),
     });
+    clearTimeout(timer);
 
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
@@ -396,7 +410,7 @@ async function fetchActive() {
     save();
   } catch (e) {
     feedState[activeKw] = 'error';
-    feedState[activeKw+'_err'] = e.message || '取得失敗';
+    feedState[activeKw+'_err'] = e.name === 'AbortError' ? 'タイムアウト（30秒）' : (e.message || '取得失敗');
   }
 
   btn.classList.remove('spin');
